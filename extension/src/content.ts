@@ -99,6 +99,7 @@ function connect(cfg: StoredConfig) {
       onResync: () => socket?.emit("requestSync"),
     });
   }
+  applyPanelVisibility();
   ui.setStatus("connecting…");
 
   const s: WPSocket = io(cfg.serverUrl, {
@@ -234,6 +235,17 @@ function shouldConnect(): boolean {
   return !!(cfgCache && cfgCache.connected && cfgCache.serverUrl && cfgCache.roomCode && onWatchPage());
 }
 
+/** Show/hide the whole overlay (launcher + panel) per the popup toggle. */
+function applyPanelVisibility() {
+  const root = document.getElementById("wp-root");
+  if (root) root.style.display = cfgCache?.showPanel === false ? "none" : "";
+}
+
+/** Connection-relevant config signature (excludes the display-only toggle). */
+function connSig(c: StoredConfig | null): string {
+  return c ? [c.connected, c.serverUrl, c.roomCode, c.name, c.secret].join("|") : "";
+}
+
 /** Bring actual state in line with desired state. */
 function reconcile() {
   if (shouldConnect()) {
@@ -250,8 +262,15 @@ chrome.storage.local.get("wp", (r) => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.wp) return;
+  const prevSig = connSig(cfgCache);
   cfgCache = (changes.wp.newValue as StoredConfig) || null;
-  // Tear down first so a changed room/server reconnects cleanly.
+
+  if (connSig(cfgCache) === prevSig) {
+    // Only the display toggle changed — don't disturb the live connection.
+    applyPanelVisibility();
+    return;
+  }
+  // A connection-relevant field changed: tear down so it reconnects cleanly.
   teardown();
   reconcile();
 });

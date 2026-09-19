@@ -75,4 +75,6 @@ export interface StoredConfig {
   name: string;
   secret: string;
   connected: boolean;
+  /** Show the on-screen chat/dashboard overlay. Sync still runs when hidden. */
+  showPanel?: boolean;
 }

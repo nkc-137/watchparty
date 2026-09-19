@@ -24,9 +24,20 @@ function restore() {
     $("roomCode").value = cfg.roomCode || "";
     $("name").value = cfg.name || "";
     $("secret").value = cfg.secret || "";
+    $("showPanel").checked = cfg.showPanel !== false; // default on
     if (cfg.connected) msg().textContent = `In room "${cfg.roomCode}".`;
   });
 }
+
+// Toggling the overlay updates config live — sync keeps running either way.
+$("showPanel").addEventListener("change", () => {
+  const show = $("showPanel").checked;
+  chrome.storage.local.get("wp", (r) => {
+    const cfg = (r.wp as StoredConfig) || ({} as StoredConfig);
+    chrome.storage.local.set({ wp: { ...cfg, showPanel: show } });
+    msg().textContent = show ? "Chat overlay shown." : "Chat overlay hidden.";
+  });
+});
 
 document.getElementById("join")!.addEventListener("click", () => {
   const f = fields();
@@ -34,7 +45,7 @@ document.getElementById("join")!.addEventListener("click", () => {
     msg().textContent = "Server URL and room code are required.";
     return;
   }
-  const cfg: StoredConfig = { ...f, connected: true };
+  const cfg: StoredConfig = { ...f, connected: true, showPanel: $("showPanel").checked };
   chrome.storage.local.set({ wp: cfg }, () => {
     msg().textContent = `Joining "${f.roomCode}"… (make sure a Netflix title is open)`;
   });

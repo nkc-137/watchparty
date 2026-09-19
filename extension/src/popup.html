@@ -25,6 +25,11 @@
       }
       #join { background: #e50914; color: #fff; }
       #leave { background: #333; color: #fff; }
+      #toggle-row {
+        display: flex; align-items: center; gap: 7px;
+        margin-top: 12px; font-size: 12px; cursor: pointer; opacity: 0.9;
+      }
+      #toggle-row input { width: auto; cursor: pointer; }
       #msg { margin-top: 10px; font-size: 11px; min-height: 14px; opacity: 0.85; }
       .hint { font-size: 10px; opacity: 0.5; margin-top: 2px; }
     </style>
@@ -47,6 +52,10 @@
       <button id="copy">Copy invite</button>
       <button id="paste">Paste invite</button>
     </div>
+    <label id="toggle-row" for="showPanel">
+      <input id="showPanel" type="checkbox" checked />
+      Show chat overlay on the video
+    </label>
     <div id="msg"></div>
     <div class="hint">Open a Netflix or Prime Video title, then Join. Everyone must be on the same title.</div>
     <script src="popup.js"></script>
