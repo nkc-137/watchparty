@@ -1,6 +1,9 @@
 /**
- * Chat + member sidebar injected into the Netflix watch page DOM.
- * Pure DOM; no framework. Styling lives in chat.css.
+ * Chat + member dashboard injected into the watch page DOM.
+ *
+ * It lives as a small collapsed "launcher" pill in the corner so it never
+ * blocks the video; clicking it expands the full panel (members, chat,
+ * reactions). Pure DOM; no framework. Styling lives in chat.css.
  */
 import { ChatMessage, Member, Reaction } from "./protocol";
 
@@ -23,23 +26,35 @@ const REACTIONS = ["😂", "😮", "😍", "🔥", "👏", "💀"];
 export function mountChat(handlers: ChatHandlers): ChatUI {
   const root = document.createElement("div");
   root.id = "wp-root";
+  // Start collapsed so it stays out of the way until the user opens it.
+  root.className = "wp-collapsed";
   root.innerHTML = `
-    <div id="wp-header">
-      <span id="wp-title">Watch Party</span>
-      <span id="wp-latency" title="round-trip latency"></span>
-      <span id="wp-status">connecting…</span>
-      <button id="wp-toggle" title="Hide/show">–</button>
+    <button id="wp-launcher" title="Open Watch Party">
+      <span id="wp-launch-icon">🎬</span>
+      <span id="wp-launch-info">Watch Party</span>
+      <span id="wp-unread"></span>
+    </button>
+    <div id="wp-panel">
+      <div id="wp-header">
+        <span id="wp-title">Watch Party</span>
+        <span id="wp-latency" title="round-trip latency"></span>
+        <span id="wp-status">connecting…</span>
+        <button id="wp-collapse" title="Collapse">–</button>
+      </div>
+      <div id="wp-members"></div>
+      <div id="wp-messages"></div>
+      <div id="wp-reactions"></div>
+      <form id="wp-form">
+        <input id="wp-input" type="text" placeholder="Say something…" maxlength="500" autocomplete="off" />
+        <button id="wp-resync" type="button" title="Resync to host">⟳</button>
+      </form>
     </div>
-    <div id="wp-members"></div>
-    <div id="wp-messages"></div>
-    <div id="wp-reactions"></div>
-    <form id="wp-form">
-      <input id="wp-input" type="text" placeholder="Say something…" maxlength="500" autocomplete="off" />
-      <button id="wp-resync" type="button" title="Resync to host">⟳</button>
-    </form>
   `;
   document.body.appendChild(root);
 
+  const launcher = root.querySelector("#wp-launcher") as HTMLButtonElement;
+  const launchInfo = root.querySelector("#wp-launch-info") as HTMLSpanElement;
+  const unreadEl = root.querySelector("#wp-unread") as HTMLSpanElement;
   const messages = root.querySelector("#wp-messages") as HTMLDivElement;
   const membersEl = root.querySelector("#wp-members") as HTMLDivElement;
   const statusEl = root.querySelector("#wp-status") as HTMLSpanElement;
@@ -47,8 +62,34 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
   const reactionsBar = root.querySelector("#wp-reactions") as HTMLDivElement;
   const form = root.querySelector("#wp-form") as HTMLFormElement;
   const input = root.querySelector("#wp-input") as HTMLInputElement;
-  const toggle = root.querySelector("#wp-toggle") as HTMLButtonElement;
+  const collapse = root.querySelector("#wp-collapse") as HTMLButtonElement;
   const resync = root.querySelector("#wp-resync") as HTMLButtonElement;
+
+  let memberCount = 0;
+  let latencyText = "";
+  let unread = 0;
+
+  function refreshLauncher() {
+    const bits = ["Watch Party"];
+    if (memberCount) bits.push(`${memberCount}\u{1F465}`); // 👥
+    if (latencyText) bits.push(latencyText);
+    launchInfo.textContent = bits.join(" · ");
+    unreadEl.textContent = unread ? String(unread) : "";
+    unreadEl.style.display = unread ? "inline-flex" : "none";
+  }
+
+  function expand() {
+    root.classList.remove("wp-collapsed");
+    unread = 0;
+    refreshLauncher();
+    input.focus();
+  }
+  function collapsePanel() {
+    root.classList.add("wp-collapsed");
+  }
+
+  launcher.addEventListener("click", expand);
+  collapse.addEventListener("click", collapsePanel);
 
   for (const emoji of REACTIONS) {
     const b = document.createElement("button");
@@ -59,7 +100,6 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
     reactionsBar.appendChild(b);
   }
 
-  toggle.addEventListener("click", () => root.classList.toggle("wp-collapsed"));
   resync.addEventListener("click", () => handlers.onResync());
 
   form.addEventListener("submit", (e) => {
@@ -69,6 +109,8 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
     handlers.onSend(text);
     input.value = "";
   });
+
+  refreshLauncher();
 
   return {
     addMessage(msg) {
@@ -81,10 +123,17 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
       (el.querySelector(".wp-text") as HTMLElement).textContent = msg.text;
       messages.appendChild(el);
       messages.scrollTop = messages.scrollHeight;
+      // Badge unread on the launcher while collapsed.
+      if (root.classList.contains("wp-collapsed")) {
+        unread++;
+        refreshLauncher();
+      }
     },
     setMembers(members) {
+      memberCount = members.length;
       membersEl.textContent =
         members.map((m) => (m.isHost ? `★ ${m.name}` : m.name)).join(" · ");
+      refreshLauncher();
     },
     setStatus(text) {
       statusEl.textContent = text;
@@ -92,16 +141,19 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
     setLatency(ms) {
       if (ms == null) {
         latencyEl.textContent = "";
+        latencyText = "";
+        refreshLauncher();
         return;
       }
       latencyEl.textContent = `${ms} ms`;
       latencyEl.className = ms < 120 ? "wp-good" : ms < 300 ? "wp-ok" : "wp-bad";
+      latencyText = `${ms}ms`;
+      refreshLauncher();
     },
     showReaction(r) {
       const el = document.createElement("div");
       el.className = "wp-float";
       el.textContent = r.emoji;
-      // Random horizontal drift so overlapping reactions don't stack.
       el.style.left = `${20 + Math.random() * 60}%`;
       root.appendChild(el);
       setTimeout(() => el.remove(), 2000);
