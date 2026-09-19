@@ -23,6 +23,11 @@ let socket: WPSocket | null = null;
 let ui: ChatUI | null = null;
 let isHost = false;
 
+// How far out of sync a follower tolerates before correcting. Prime's fragile
+// player prefers a looser threshold so we don't seek (and re-buffer) constantly.
+const IS_PRIME = /primevideo\.com|amazon\./.test(location.hostname);
+const DRIFT_TOLERANCE_SEC = IS_PRIME ? 2.5 : 1;
+
 // Latest known local player state (fed by the page's periodic samples).
 let local: { position: number; playing: boolean; videoId: number | null } = {
   position: 0,
@@ -128,7 +133,7 @@ function connect(cfg: StoredConfig) {
     if (isHost) return; // host is the authority; ignore its own echoes
     const target = projected(state);
     const drift = Math.abs(local.position - target);
-    if (drift > 1) apply("seek", target);
+    if (drift > DRIFT_TOLERANCE_SEC) apply("seek", target);
     if (state.playing !== local.playing) apply(state.playing ? "play" : "pause", target);
   });
 
@@ -207,7 +212,23 @@ setInterval(() => {
 // URL or the stored config changes — so no manual reload is needed.
 let cfgCache: StoredConfig | null = null;
 
-const onWatchPage = () => /\/watch\//.test(location.pathname);
+/**
+ * Whether a playable content page is open. Site-specific because the sites
+ * differ: Netflix uses a /watch/ URL; Prime opens its player in-place (the URL
+ * often doesn't change), so we detect a real content <video> in the DOM.
+ */
+function onWatchPage(): boolean {
+  const host = location.hostname;
+  if (host.includes("netflix.com")) return /\/watch\//.test(location.pathname);
+  if (host.includes("primevideo.com") || host.includes("amazon.")) {
+    // Prime has several <video> elements (the first often has no duration);
+    // treat the page as "playing" if ANY video has a real content duration.
+    return Array.from(document.querySelectorAll("video")).some(
+      (v) => isFinite(v.duration) && v.duration > 60
+    );
+  }
+  return false;
+}
 
 function shouldConnect(): boolean {
   return !!(cfgCache && cfgCache.connected && cfgCache.serverUrl && cfgCache.roomCode && onWatchPage());
@@ -235,12 +256,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   reconcile();
 });
 
-// Detect SPA URL changes (browse -> watch, episode -> episode, watch -> exit).
-let lastHref = location.href;
-setInterval(() => {
-  if (location.href !== lastHref) {
-    lastHref = location.href;
-    reconcile();
-  }
-}, 1000);
+// Re-evaluate every second. This catches SPA URL changes (Netflix
+// browse -> watch) AND Prime opening/closing its player without a URL change.
+// reconcile() is idempotent, so polling it is cheap and safe.
+setInterval(reconcile, 1000);
 window.addEventListener("popstate", reconcile);

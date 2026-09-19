@@ -1,0 +1,45 @@
+/**
+ * A PlayerAdapter abstracts one streaming site's video player behind a common,
+ * seconds-based interface. Adapters run in the page's MAIN world (so Netflix's
+ * `netflix.*` globals are reachable and the DOM `<video>` is accessible).
+ *
+ * To add a new site: implement this interface and register it in ./index.ts.
+ */
+export interface PlayerAdapter {
+  /** Human name, used for logging/status. */
+  readonly name: string;
+
+  /** True when a controllable content player is currently available. */
+  available(): boolean;
+
+  /** Current playback position in seconds. */
+  getTime(): number;
+
+  /** Whether playback is currently paused. */
+  isPaused(): boolean;
+
+  /** Seek to an absolute position in seconds. */
+  seek(seconds: number): void;
+
+  play(): void;
+  pause(): void;
+
+  /** Best-effort content id for sanity checks; null if unknown. */
+  videoId(): number | null;
+
+  // --- Optional robustness tuning (defaults keep Netflix's original behavior) ---
+
+  /**
+   * Minimum gap between applied seeks, in ms. Rapid/large seeks destabilize
+   * fragile HTML5 players (Prime throws "Video Unavailable"). Seeks that arrive
+   * inside the window are coalesced and applied once at the end. Default 0.
+   */
+  readonly minSeekIntervalMs?: number;
+
+  /**
+   * On a remote play/pause, only re-seek to align position if we're off by more
+   * than this many seconds. Avoids a buffer-inducing seek on every pause for
+   * fragile players. Default 0 = always seek (Netflix's robust behavior).
+   */
+  readonly playPauseDriftSec?: number;
+}

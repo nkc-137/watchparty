@@ -1,9 +1,12 @@
-# Watch Party (Netflix)
+# Watch Party (Netflix + Prime Video)
 
-Self-hosted, Teleparty-style watch party for Netflix. Everyone streams from
-**their own** Netflix account; the server only synchronizes playback
-(play/pause/seek) and relays chat — no video ever passes through it. This keeps
-it legal and dodges Widevine DRM entirely.
+Self-hosted, Teleparty-style watch party for **Netflix and Amazon Prime Video**.
+Everyone streams from **their own** account; the server only synchronizes
+playback (play/pause/seek) and relays chat — no video ever passes through it.
+This keeps it legal and dodges Widevine DRM entirely.
+
+Per-site player control lives in `extension/src/players/` (one adapter per
+site). Adding another service later is mostly writing a new adapter.
 
 ```
 [Chrome + extension] ─┐
@@ -50,7 +53,8 @@ Then in Chrome: `chrome://extensions` → enable **Developer mode** →
 
 ## Use it
 
-1. Everyone opens the **same** Netflix title (`netflix.com/watch/<id>`).
+1. Everyone opens the **same** title on the **same** service — a Netflix
+   `netflix.com/watch/<id>` page, or an Amazon Prime Video title that's playing.
 2. Click the extension icon, fill in:
    - **Server URL** — e.g. `http://localhost:4000` for LAN, or your public
      `https://…` tunnel URL over the internet.
@@ -99,8 +103,8 @@ Send this to anyone you invite. They need their own Netflix account.
    - Get the `extension/dist` folder from the host (a zip is fine), unzip it.
    - Chrome → `chrome://extensions` → turn on **Developer mode** →
      **Load unpacked** → select the `dist` folder. Pin the "Watch Party" icon.
-2. **Open the movie/show** — everyone must be on the **same** Netflix title
-   (`netflix.com/watch/<id>`). The host says which one.
+2. **Open the movie/show** — everyone must be on the **same** title on the
+   **same** service (Netflix or Prime Video). The host says which one.
 3. **Join the room** — click the Watch Party icon, then either:
    - Click **Paste invite** (if the host sent you an invite token) and just add
      your **Name**, **or**
@@ -117,18 +121,27 @@ re-share a fresh invite whenever the tunnel URL changes.
 
 ---
 
-## How the Netflix hook works
+## How the player hooks work
 
-Content scripts can't see `netflix.*` (isolated world), so `src/inject.ts`
-runs in the page's **MAIN world** (declared in `manifest.json`) and is the only
-file touching Netflix's private player API:
+Content scripts can't see the page's JS globals (isolated world), so
+`src/inject.ts` runs in the page's **MAIN world** (declared in `manifest.json`).
+It picks a per-site **adapter** from `src/players/` and drives it generically:
 
-```js
-netflix.appContext.state.playerApp.getAPI().videoPlayer
-```
+- `players/netflix.ts` — Netflix's private player API
+  (`netflix.appContext.state.playerApp.getAPI().videoPlayer`).
+- `players/prime.ts` — Amazon Prime's standard HTML5 `<video>` element.
 
-It bridges to `src/content.ts` (which owns the socket) via `window.postMessage`.
-If Netflix changes their internals, `inject.ts` is the one file to fix.
+`inject.ts` bridges to `src/content.ts` (which owns the socket) via
+`window.postMessage`. To add another service, write a new adapter implementing
+`players/types.ts` and register it in `players/index.ts` — nothing else changes.
+
+**Site robustness note:** Netflix exposes a real `seek()` API that buffers
+gracefully. Prime only gives us the raw HTML5 `<video>`, and rapid/large seeks
+can crash its DRM pipeline ("Video Unavailable"). Adapters therefore carry
+optional tuning (`minSeekIntervalMs`, `playPauseDriftSec`) — Prime rate-limits
+and coalesces seeks and won't re-seek on a plain pause unless it's off by >2.5s.
+Followers on Prime also use a looser drift tolerance. Netflix keeps its original
+tight, always-seek behavior (the defaults are no-ops).
 
 ## Verification checklist
 

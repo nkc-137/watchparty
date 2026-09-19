@@ -1,10 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Watch Party (Netflix)",
-  "version": "0.1.0",
-  "description": "Self-hosted watch party sync + chat for Netflix.",
+  "name": "Watch Party (Netflix + Prime)",
+  "version": "0.2.0",
+  "description": "Self-hosted watch party sync + chat for Netflix and Amazon Prime Video.",
   "permissions": ["storage", "tabs"],
-  "host_permissions": ["*://*.netflix.com/*"],
+  "host_permissions": [
+    "*://*.netflix.com/*",
+    "*://*.primevideo.com/*",
+    "*://*.amazon.com/gp/video/*"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Watch Party"
@@ -14,13 +18,21 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.netflix.com/*"],
+      "matches": [
+        "*://*.netflix.com/*",
+        "*://*.primevideo.com/*",
+        "*://*.amazon.com/gp/video/*"
+      ],
       "js": ["inject.js"],
       "world": "MAIN",
       "run_at": "document_idle"
     },
     {
-      "matches": ["*://*.netflix.com/*"],
+      "matches": [
+        "*://*.netflix.com/*",
+        "*://*.primevideo.com/*",
+        "*://*.amazon.com/gp/video/*"
+      ],
       "js": ["content.js"],
       "css": ["chat.css"],
       "world": "ISOLATED",

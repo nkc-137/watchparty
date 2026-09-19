@@ -1,52 +1,17 @@
 /**
- * MAIN-world script. This is the ONLY file that touches Netflix's private
- * player API — if Netflix changes it, this is the one place to fix.
+ * MAIN-world script. Site-agnostic playback bridge.
  *
- * Runs in the page's JS context so `netflix.appContext` is visible. It:
- *  - grabs the active player,
+ * It selects a per-site PlayerAdapter (see ./players) and:
  *  - detects local play/pause/seek and reports them to the content script,
  *  - applies remote commands received from the content script,
  *  - emits a periodic state sample for host drift broadcasts.
+ *
+ * All site-specific player access lives in ./players/* — this file is generic.
  */
 import { NS, FromPage, ToPage, ApplyMsg } from "./bridge";
+import { selectAdapter, PlayerAdapter } from "./players";
 
-// Netflix's globals are untyped; keep the surface tiny and defensive.
-declare const netflix: any;
-
-interface NetflixPlayer {
-  getCurrentTime(): number; // ms
-  seek(ms: number): void;
-  play(): void;
-  pause(): void;
-  isPaused?(): boolean;
-  getDuration?(): number;
-}
-
-function getPlayer(): NetflixPlayer | null {
-  try {
-    const videoPlayer =
-      netflix?.appContext?.state?.playerApp?.getAPI?.()?.videoPlayer;
-    if (!videoPlayer) return null;
-    const ids = videoPlayer.getAllPlayerSessionIds?.() || [];
-    if (!ids.length) return null;
-    return videoPlayer.getVideoPlayerBySessionId(ids[0]) || null;
-  } catch {
-    return null;
-  }
-}
-
-function currentVideoId(): number | null {
-  try {
-    const sessions =
-      netflix?.appContext?.state?.playerApp?.getAPI?.()?.videoPlayer;
-    const ids = sessions?.getAllPlayerSessionIds?.() || [];
-    // Session id looks like "watch-<movieId>-..."; extract the numeric part.
-    const m = /(\d+)/.exec(ids[0] || "");
-    return m ? Number(m[1]) : null;
-  } catch {
-    return null;
-  }
-}
+const adapter: PlayerAdapter | null = selectAdapter();
 
 function post(msg: FromPage) {
   window.postMessage(msg, "*");
@@ -60,20 +25,58 @@ function suppress(ms = 700) {
   suppressUntil = Date.now() + ms;
 }
 
+// Seek rate-limiting: fragile players (Prime) break under rapid/large seeks, so
+// we enforce a per-adapter minimum gap and coalesce bursts to the latest target.
+const minSeekMs = adapter?.minSeekIntervalMs ?? 0;
+let lastSeekAt = 0;
+let pendingSeek: number | null = null;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+function doSeek(pos: number) {
+  suppress();
+  adapter!.seek(pos);
+  lastSeekAt = Date.now();
+}
+
+function requestSeek(pos: number) {
+  const wait = minSeekMs - (Date.now() - lastSeekAt);
+  if (wait <= 0) {
+    doSeek(pos);
+    return;
+  }
+  // Too soon — remember the latest target and flush when the window elapses.
+  pendingSeek = pos;
+  if (!pendingTimer) {
+    pendingTimer = setTimeout(() => {
+      pendingTimer = null;
+      if (pendingSeek !== null) {
+        doSeek(pendingSeek);
+        pendingSeek = null;
+      }
+    }, wait);
+  }
+}
+
+/** Only re-seek on play/pause if we're off by more than the adapter tolerates. */
+function alignForPlayPause(pos: number) {
+  const thr = adapter!.playPauseDriftSec ?? 0;
+  if (thr === 0 || Math.abs(adapter!.getTime() - pos) > thr) requestSeek(pos);
+}
+
 window.addEventListener("message", (ev) => {
   const data = ev.data as ToPage;
   if (!data || data.ns !== NS || data.dir !== "toPage") return;
-  const p = getPlayer();
-  if (!p) return;
+  if (!adapter || !adapter.available()) return;
   const cmd = data as ApplyMsg;
-  suppress();
-  if (cmd.action === "seek") p.seek(Math.round(cmd.position * 1000));
+  if (cmd.action === "seek") requestSeek(cmd.position);
   else if (cmd.action === "play") {
-    p.seek(Math.round(cmd.position * 1000));
-    p.play();
+    alignForPlayPause(cmd.position);
+    suppress();
+    adapter.play();
   } else if (cmd.action === "pause") {
-    p.seek(Math.round(cmd.position * 1000));
-    p.pause();
+    alignForPlayPause(cmd.position);
+    suppress();
+    adapter.pause();
   }
 });
 
@@ -83,8 +86,7 @@ let lastTime = 0; // seconds
 let ready = false;
 
 function sample() {
-  const p = getPlayer();
-  if (!p) {
+  if (!adapter || !adapter.available()) {
     if (ready) {
       ready = false;
       post({ ns: NS, dir: "fromPage", kind: "ready", ready: false });
@@ -96,9 +98,9 @@ function sample() {
     post({ ns: NS, dir: "fromPage", kind: "ready", ready: true });
   }
 
-  const time = p.getCurrentTime() / 1000; // seconds
-  const paused = p.isPaused ? p.isPaused() : false;
-  const vid = currentVideoId();
+  const time = adapter.getTime(); // seconds
+  const paused = adapter.isPaused();
+  const vid = adapter.videoId();
   const now = Date.now();
   const suppressed = now < suppressUntil;
 
@@ -129,4 +131,4 @@ function sample() {
   lastTime = time;
 }
 
-setInterval(sample, 500);
+if (adapter) setInterval(sample, 500);
