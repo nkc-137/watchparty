@@ -8,6 +8,8 @@
 
 <sub>Play · Pause · Seek stay synced for everyone · Live chat + emoji reactions · No video ever leaves your friends' own accounts</sub>
 
+[![CI](https://github.com/nkc-137/watchparty/actions/workflows/ci.yml/badge.svg)](https://github.com/nkc-137/watchparty/actions/workflows/ci.yml)
+
 </div>
 
 ---
