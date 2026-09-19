@@ -237,10 +237,12 @@ flowchart TB
 watchparty/
 ├── server/                 # Node + Socket.IO sync server
 │   ├── src/
-│   │   ├── index.ts        # socket handlers, rooms, activity notices
+│   │   ├── app.ts          # server factory (rooms, relay, activity notices)
+│   │   ├── index.ts        # entry point (reads env, listens)
 │   │   ├── rooms.ts        # in-memory room registry + host election
 │   │   └── protocol.ts     # shared wire types
-│   └── scripts/            # test + virtual-participant harnesses
+│   ├── test/               # automated integration suite (npm test)
+│   └── scripts/            # smoke test + virtual-participant harness
 ├── extension/              # Manifest V3 Chrome extension
 │   ├── src/
 │   │   ├── inject.ts       # MAIN-world player bridge (generic)
@@ -256,9 +258,34 @@ watchparty/
 
 ---
 
-## Verification checklist
+## Testing
 
-- **Server relay:** `npm run test:client` prints `PASS`.
+### Automated integration tests
+
+The server has an integration suite that boots the **real** server on an
+ephemeral port and drives it with **real** Socket.IO clients — covering rooms,
+host election/handoff, play/pause/seek relay, chat, reactions, activity notices,
+the `JOIN_SECRET` gate, drift/`requestSync`, and late-joiner state:
+
+```bash
+cd server
+npm install
+npm test            # -> "12/12 passed" then "PASS"
+```
+
+No framework or extra services required — it's a self-contained runner
+(`server/test/integration.test.ts`). Great for CI or a pre-deploy check.
+
+There's also a quick two-client smoke script:
+
+```bash
+npm run test:client   # start the server first (npm start), then run this
+```
+
+### Manual end-to-end checklist
+
+The extension's browser/DOM side is verified by driving a real browser:
+
 - **Player control:** with the extension loaded on a title, the overlay reaches
   "connected"; pausing in one browser pauses another within ~1s.
 - **Two-profile sync:** two Chrome profiles in the same room + same title stay in
