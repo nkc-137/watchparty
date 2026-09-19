@@ -1,46 +1,64 @@
-# Watch Party (Netflix + Prime Video)
+<div align="center">
 
-Self-hosted, Teleparty-style watch party for **Netflix and Amazon Prime Video**.
-Everyone streams from **their own** account; the server only synchronizes
-playback (play/pause/seek) and relays chat — no video ever passes through it.
-This keeps it legal and dodges Widevine DRM entirely.
+<img src="extension/icons/icon128.png" width="104" alt="Watch Party logo" />
 
-Per-site player control lives in `extension/src/players/` (one adapter per
-site). Adding another service later is mostly writing a new adapter.
+# Watch Party
 
-```
-[Chrome + extension] ─┐
-[Chrome + extension]  ├── WSS ──> [sync server on old PC] ──(Cloudflare Quick Tunnel)──> public HTTPS
-[Chrome + extension] ─┘
-```
+**Watch Netflix & Amazon Prime Video in perfect sync with friends — with live chat, reactions, and a self-hosted server you fully control.**
 
-Current deployment: the server runs as a **systemd** service on a Linux PC, with
-a **Cloudflare Quick Tunnel** (free, no domain) giving it a public HTTPS URL.
-See [DEPLOY.md](DEPLOY.md) for the full step-by-step.
+<sub>Play · Pause · Seek stay synced for everyone · Live chat + emoji reactions · No video ever leaves your friends' own accounts</sub>
 
-## Layout
-
-- `server/` — Node + TypeScript + Socket.IO sync server (rooms, event relay, chat).
-- `extension/` — Manifest V3 Chrome extension (Netflix player hook + chat overlay).
+</div>
 
 ---
 
-## Run the server
+## What is this?
+
+Watch Party is a Teleparty-style tool for remote movie nights. Everyone streams
+the same title from **their own** Netflix or Prime Video account, and a small
+server keeps everyone's playback in step — when one person plays, pauses, or
+seeks, everyone follows. A chat sidebar with emoji reactions sits over the video.
+
+**No video is ever shared or re-streamed.** The server only relays *timing* and
+*chat*, so quality stays perfect for each viewer, it dodges Widevine DRM
+entirely, and each person watches on their own subscription.
+
+It has two parts:
+
+| Part | What it is |
+| --- | --- |
+| **`server/`** | A Node + TypeScript + Socket.IO sync server (rooms, event relay, chat). You run this. |
+| **`extension/`** | A Manifest V3 Chrome extension (the player hook + chat overlay) your friends install. |
+
+## Features
+
+- 🎬 **Synced play / pause / seek** across everyone, with automatic drift correction
+- 💬 **Live chat** with a member list and activity notices ("Alex paused", "Sam jumped to 25:00", joins & leaves)
+- 😂 **Emoji reactions** that float over the video
+- 📶 **Latency badge** + one-click **⟳ resync** to snap back to the host
+- 🫥 **Collapsible, translucent overlay** — or hide it entirely and keep syncing
+- 🔗 **One-click invites** — a token bundles the server URL, room, and secret
+- 🔒 **Self-hosted & private** — no accounts, no tracking; rooms gated by a shared secret
+- 🧩 **Netflix + Prime Video**, with a pluggable adapter system for adding more sites
+
+---
+
+## Quick start (try it locally in 5 minutes)
+
+You need [Node.js](https://nodejs.org) 18+ and Chrome.
+
+### 1. Run the sync server
 
 ```bash
 cd server
 npm install
 npm run build
-JOIN_SECRET=some-shared-password PORT=4000 npm start
+JOIN_SECRET=movie-night PORT=4000 npm start
 ```
 
-Headless sanity check (server must be running):
+Sanity check (in another terminal, server running): `npm run test:client` → prints `PASS`.
 
-```bash
-npm run test:client      # spins up two socket clients, asserts relay works
-```
-
-## Build & load the extension
+### 2. Build & load the extension
 
 ```bash
 cd extension
@@ -48,125 +66,213 @@ npm install
 npm run build            # outputs extension/dist/
 ```
 
-Then in Chrome: `chrome://extensions` → enable **Developer mode** →
-**Load unpacked** → select `extension/dist`.
+Then in Chrome: open `chrome://extensions` → turn on **Developer mode** →
+**Load unpacked** → select the `extension/dist` folder. Pin the **W** icon.
 
-## Use it
+### 3. Watch together
 
-1. Everyone opens the **same** title on the **same** service — a Netflix
-   `netflix.com/watch/<id>` page, or an Amazon Prime Video title that's playing.
-2. Click the extension icon, fill in:
-   - **Server URL** — e.g. `http://localhost:4000` for LAN, or your public
-     `https://…` tunnel URL over the internet.
-   - **Room code** — any shared string (e.g. `movie-night`).
-   - **Name**, and the **Secret** if you set `JOIN_SECRET`.
-3. Click **Join**. A chat panel appears; the first person to join is host.
-4. Host's play/pause/seek drives everyone; host also broadcasts state every 3s
-   to correct drift. Chat is shared by all.
+1. Open a title — a Netflix `netflix.com/watch/<id>` page, or a Prime Video title that's playing.
+2. Click the **W** icon and fill in:
+   - **Server URL** — `http://localhost:4000` for a local test
+   - **Room code** — any shared word, e.g. `movie-night`
+   - **Name**, and the **Secret** (your `JOIN_SECRET`)
+3. Click **Join**. The first person in a room is the **host**; their play/pause/seek drives everyone.
 
-> Note: browsers require a **secure origin** (`https://` / `wss://`) for
-> production. `http://localhost` works for local testing; for real use put the
-> server behind the Cloudflare Tunnel below.
+> ℹ️ Browsers require a secure origin (`https://`/`wss://`) in production.
+> `http://localhost` is fine for testing; for real parties put the server behind
+> a tunnel (next section).
 
 ---
 
-## Deploy on the old PC
+## Going live: host it for real
 
-The current setup runs on a Debian/Ubuntu Linux PC with two `systemd` services:
+For actual movie nights the server should run 24/7 on a spare machine and be
+reachable over the internet. The recommended free setup:
 
-- **`watchparty`** — the Node server on `localhost:4000` (with `JOIN_SECRET`).
-- **`watchparty-tunnel`** — a Cloudflare **Quick Tunnel** (free, no domain)
-  exposing it over public HTTPS.
+- Run the server as a **systemd service** on a Linux PC.
+- Expose it with a free **Cloudflare Quick Tunnel** (no domain, no router setup).
 
-Full walkthrough — Node install, the systemd unit files, and the tunnel — is in
-**[DEPLOY.md](DEPLOY.md)**. Both services auto-start on boot.
+👉 **Full step-by-step in [DEPLOY.md](DEPLOY.md)** — Node install, the service
+files, the tunnel, and a `party-url` helper.
 
-Because a Quick Tunnel's URL is **random and changes on every restart/reboot**,
-grab the current URL on the PC with:
+The Quick Tunnel gives a public HTTPS URL like
+`https://something-random.trycloudflare.com`. It's free but **changes on every
+restart/reboot**, so grab the current one before each session:
 
 ```bash
-journalctl -u watchparty-tunnel --no-pager \
-  | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1
+party-url        # helper set up in DEPLOY.md
 ```
 
-(A `party-url` shell helper for this is set up in DEPLOY.md.) For a **stable**
-URL, add a domain to Cloudflare and use a named tunnel instead — see the
-"named tunnel" note in DEPLOY.md. A private, no-domain alternative is Tailscale.
+Want a URL that never changes? Add a domain to Cloudflare and use a **named
+tunnel** (see DEPLOY.md). A private, no-domain option is **Tailscale**.
 
 ---
 
-## How your friends join a watch party
+## Inviting friends
 
-Send this to anyone you invite. They need their own Netflix account.
+Each friend does a one-time install, then joins in seconds.
 
-1. **Install the extension** (one time):
-   - Get the `extension/dist` folder from the host (a zip is fine), unzip it.
-   - Chrome → `chrome://extensions` → turn on **Developer mode** →
-     **Load unpacked** → select the `dist` folder. Pin the "Watch Party" icon.
-2. **Open the movie/show** — everyone must be on the **same** title on the
-   **same** service (Netflix or Prime Video). The host says which one.
-3. **Join the room** — click the Watch Party icon, then either:
-   - Click **Paste invite** (if the host sent you an invite token) and just add
-     your **Name**, **or**
-   - Fill in **Server URL**, **Room code**, **Name**, and **Secret** manually
-     with the values the host gives you.
-   - Click **Join**.
-4. A chat panel appears on the right. The host controls play/pause/seek for
-   everyone; chat and emoji reactions are shared. If you drift out of sync, hit
-   the **⟳** button to snap back to the host's position.
+**You (the host):**
+1. In the popup, set the **Server URL** (`party-url`), **Room code**, and **Secret**.
+2. Click **Copy invite** — this bundles URL + room + secret into one token.
+3. Send them the token, and tell them which **title** to open.
 
-Host side: fill the popup once, click **Copy invite**, and send the token — it
-bundles the URL + room + secret so friends only type their name. Remember to
-re-share a fresh invite whenever the tunnel URL changes.
+**Your friend:**
+1. **Install the extension once** — from the Chrome Web Store link (see
+   [publishing](#publishing-to-the-chrome-web-store)), or load the `dist` folder
+   unpacked.
+2. Open the **same title** on the same service.
+3. Click the **W** icon → **Paste invite** → type a **Name** → **Join**.
+
+> 🔁 Re-share a fresh invite whenever the tunnel URL changes (i.e. after a PC or
+> tunnel restart).
 
 ---
 
-## How the player hooks work
+## Publishing to the Chrome Web Store
 
-Content scripts can't see the page's JS globals (isolated world), so
-`src/inject.ts` runs in the page's **MAIN world** (declared in `manifest.json`).
-It picks a per-site **adapter** from `src/players/` and drives it generically:
+So friends install with one click instead of loading an unpacked folder. The
+repo is pre-packaged for this:
 
-- `players/netflix.ts` — Netflix's private player API
-  (`netflix.appContext.state.playerApp.getAPI().videoPlayer`).
-- `players/prime.ts` — Amazon Prime's standard HTML5 `<video>` element.
+```bash
+cd extension
+npm run package          # builds + creates watchparty-extension.zip
+```
 
-`inject.ts` bridges to `src/content.ts` (which owns the socket) via
-`window.postMessage`. To add another service, write a new adapter implementing
-`players/types.ts` and register it in `players/index.ts` — nothing else changes.
+Then follow **[extension/PUBLISHING.md](extension/PUBLISHING.md)** to submit it
+(publish **Unlisted** for a friends-only link). A ready privacy policy is in
+[extension/PRIVACY.md](extension/PRIVACY.md).
 
-**Site robustness note:** Netflix exposes a real `seek()` API that buffers
-gracefully. Prime only gives us the raw HTML5 `<video>`, and rapid/large seeks
-can crash its DRM pipeline ("Video Unavailable"). Adapters therefore carry
-optional tuning (`minSeekIntervalMs`, `playPauseDriftSec`) — Prime rate-limits
-and coalesces seeks and won't re-seek on a plain pause unless it's off by >2.5s.
-Followers on Prime also use a looser drift tolerance. Netflix keeps its original
-tight, always-seek behavior (the defaults are no-ops).
+---
+
+## Architecture
+
+Every participant runs the extension in their own browser and streams from their
+own account. The server is a lightweight relay — it never sees video, only
+timing and chat.
+
+```mermaid
+flowchart LR
+    subgraph H["🧑 Host — Chrome"]
+        HN["Netflix / Prime tab<br/>(their own account)"]
+        HX["Watch Party extension"]
+    end
+    subgraph F["🧑‍🤝‍🧑 Friends — Chrome"]
+        FN["Netflix / Prime tab<br/>(their own account)"]
+        FX["Watch Party extension"]
+    end
+
+    HX -- "WSS (play/pause/seek + chat)" --> CF
+    FX -- "WSS" --> CF
+    CF["☁️ Cloudflare Quick Tunnel<br/>public HTTPS"] --> S
+
+    subgraph PC["🖥️ Old PC (systemd)"]
+        S["Sync server<br/>Node + Socket.IO<br/>rooms · relay · chat"]
+    end
+
+    HN -. "streams video directly" .-> Netflix["🎬 Netflix / Prime CDN"]
+    FN -. "streams video directly" .-> Netflix
+```
+
+**How one action propagates** (host pauses → everyone pauses):
+
+```mermaid
+sequenceDiagram
+    participant HP as Host player
+    participant HI as inject.ts<br/>(MAIN world)
+    participant HC as content.ts<br/>(socket)
+    participant S as Sync server
+    participant FC as Friend content.ts
+    participant FI as Friend inject.ts
+    participant FP as Friend player
+
+    HP->>HI: user hits pause
+    HI->>HC: postMessage {pause, position}
+    HC->>S: playbackEvent
+    S-->>FC: relay playbackEvent
+    S-->>S: broadcast "Host paused" to chat
+    FC->>FI: postMessage {apply pause}
+    FI->>FP: seek + pause (loop-guarded)
+    Note over S: Host also broadcasts full<br/>state every 3s for drift correction
+```
+
+### Inside the extension
+
+Chrome content scripts run in an **isolated world** and can't see a page's JS
+globals (like Netflix's player API). So the extension is split across two worlds
+that talk via `window.postMessage`:
+
+```mermaid
+flowchart TB
+    subgraph page["Watch page"]
+        direction TB
+        subgraph main["MAIN world"]
+            inject["inject.ts<br/>picks a site adapter,<br/>reads/controls the player"]
+            adapters["players/*<br/>netflix.ts · prime.ts"]
+            inject --- adapters
+        end
+        subgraph iso["ISOLATED world"]
+            content["content.ts<br/>owns the socket,<br/>renders overlay"]
+            chat["chat.ts overlay"]
+            content --- chat
+        end
+        inject <-->|postMessage bridge| content
+    end
+    popup["popup.ts<br/>join / invite / toggle"] -->|chrome.storage| content
+    content <-->|Socket.IO| server[("Sync server")]
+```
+
+- **`players/`** — one adapter per site behind a common interface
+  (`players/types.ts`). `netflix.ts` uses Netflix's private player API;
+  `prime.ts` drives the standard HTML5 `<video>`. Add a service by writing a new
+  adapter and registering it in `players/index.ts` — nothing else changes.
+- **Robustness tuning:** Netflix's `seek()` buffers gracefully; Prime's raw
+  HTML5 seek is fragile, so its adapter rate-limits/coalesces seeks and avoids
+  re-seeking on a plain pause (`minSeekIntervalMs`, `playPauseDriftSec`). Netflix
+  keeps its tight, always-seek behavior (the defaults are no-ops).
+
+### Repository layout
+
+```
+watchparty/
+├── server/                 # Node + Socket.IO sync server
+│   ├── src/
+│   │   ├── index.ts        # socket handlers, rooms, activity notices
+│   │   ├── rooms.ts        # in-memory room registry + host election
+│   │   └── protocol.ts     # shared wire types
+│   └── scripts/            # test + virtual-participant harnesses
+├── extension/              # Manifest V3 Chrome extension
+│   ├── src/
+│   │   ├── inject.ts       # MAIN-world player bridge (generic)
+│   │   ├── content.ts      # ISOLATED-world socket + reconcile logic
+│   │   ├── chat.ts         # collapsible overlay / dashboard
+│   │   ├── popup.ts        # config, invites, show/hide toggle
+│   │   └── players/        # per-site adapters
+│   ├── icons/              # generated app icons
+│   └── PUBLISHING.md · PRIVACY.md
+├── DEPLOY.md               # host it on the old PC
+└── README.md
+```
+
+---
 
 ## Verification checklist
 
 - **Server relay:** `npm run test:client` prints `PASS`.
-- **Player control:** on a Netflix title with the extension loaded, the overlay
-  status reaches "connected"; pausing in one browser pauses the other within ~1s.
-- **Two-profile sync:** two Chrome profiles in the same room + same title stay
-  in sync on play/pause/seek.
-- **Remote:** from a phone on cellular via the tunnel URL, a two-person party
-  stays in sync end-to-end.
-
-## Features
-
-- Host-authoritative play/pause/seek sync with drift correction.
-- Survives Netflix's single-page-app navigation: the overlay auto-mounts when
-  you enter a `/watch/` page and tears down when you leave — no manual reload.
-- Host handoff when the host disconnects.
-- Shared chat with member list.
-- **Emoji reactions** — floating over the video, quick-buttons in the overlay.
-- **Latency badge** — live round-trip time to the server (green/amber/red).
-- **Resync button** (⟳) — pull the host's current position on demand.
-- **Copyable invites** — "Copy invite" encodes server+room+secret into a token;
-  friends hit "Paste invite" to auto-fill everything but their name.
+- **Player control:** with the extension loaded on a title, the overlay reaches
+  "connected"; pausing in one browser pauses another within ~1s.
+- **Two-profile sync:** two Chrome profiles in the same room + same title stay in
+  sync on play/pause/seek.
+- **Remote:** from a device off your home network (phone on cellular) via the
+  tunnel URL, a two-person party stays in sync end-to-end.
 
 ## Roadmap
 
-"Wait for everyone to buffer before play", copyable deep links (vs. tokens),
-per-title auto room codes.
+- "Wait for everyone to buffer before play"
+- Deep-link invites (vs. paste tokens)
+- Per-title auto room codes
+- More streaming services (new adapters)
+
+## License
+
+Personal project — use it for your own movie nights. No warranty.
