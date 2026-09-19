@@ -1,0 +1,81 @@
+#wp-root {
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  width: 300px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 20, 20, 0.92);
+  color: #eee;
+  font-family: "Netflix Sans", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  z-index: 2147483647;
+  overflow: hidden;
+}
+#wp-root.wp-collapsed #wp-members,
+#wp-root.wp-collapsed #wp-messages,
+#wp-root.wp-collapsed #wp-form {
+  display: none;
+}
+#wp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #e50914;
+  cursor: default;
+}
+#wp-title { font-weight: 700; }
+#wp-status { margin-left: auto; font-size: 11px; opacity: 0.85; }
+#wp-toggle {
+  background: transparent; border: none; color: #fff;
+  font-size: 16px; cursor: pointer; line-height: 1; padding: 0 4px;
+}
+#wp-members {
+  padding: 6px 10px; font-size: 11px; opacity: 0.8;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+#wp-messages {
+  flex: 1; overflow-y: auto; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.wp-msg { line-height: 1.35; word-break: break-word; }
+.wp-name { font-weight: 700; margin-right: 6px; }
+.wp-time { font-size: 10px; opacity: 0.5; margin-right: 6px; }
+#wp-latency { margin-left: auto; font-size: 10px; opacity: 0.9; }
+#wp-latency.wp-good { color: #7CFC7C; }
+#wp-latency.wp-ok { color: #FFD24C; }
+#wp-latency.wp-bad { color: #FF6B6B; }
+#wp-header #wp-status { margin-left: 8px; }
+#wp-reactions {
+  display: flex; gap: 4px; padding: 6px 8px 0;
+}
+.wp-react {
+  background: rgba(255,255,255,0.08); border: none; border-radius: 5px;
+  font-size: 15px; padding: 3px 5px; cursor: pointer; line-height: 1;
+}
+.wp-react:hover { background: rgba(255,255,255,0.2); }
+#wp-form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,0.1); }
+#wp-input {
+  flex: 1; box-sizing: border-box; padding: 7px 9px;
+  border-radius: 6px; border: none; background: #333; color: #fff;
+  font-size: 13px; outline: none;
+}
+#wp-resync {
+  background: #333; border: none; color: #fff; border-radius: 6px;
+  cursor: pointer; font-size: 15px; padding: 0 9px;
+}
+#wp-resync:hover { background: #444; }
+.wp-collapsed #wp-reactions { display: none; }
+.wp-float {
+  position: absolute; bottom: 56px; font-size: 28px; pointer-events: none;
+  animation: wp-rise 2s ease-out forwards;
+}
+@keyframes wp-rise {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(-160px); opacity: 0; }
+}

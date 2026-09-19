@@ -1,0 +1,18 @@
+{
+  "name": "watchparty-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension client for the Netflix watch party",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.5"
+  }
+}

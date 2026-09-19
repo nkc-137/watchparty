@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Watch Party (Netflix)",
+  "version": "0.1.0",
+  "description": "Self-hosted watch party sync + chat for Netflix.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["*://*.netflix.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Watch Party"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.netflix.com/*"],
+      "js": ["inject.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.netflix.com/*"],
+      "js": ["content.js"],
+      "css": ["chat.css"],
+      "world": "ISOLATED",
+      "run_at": "document_idle"
+    }
+  ]
+}
