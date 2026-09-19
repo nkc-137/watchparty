@@ -4,7 +4,7 @@
 
 # Watch Party
 
-**Watch Netflix & Amazon Prime Video in perfect sync with friends — with live chat, reactions, and a self-hosted server you fully control.**
+**Watch Netflix, Amazon Prime Video & YouTube in perfect sync with friends — with live chat, reactions, and a self-hosted server you fully control.**
 
 <sub>Play · Pause · Seek stay synced for everyone · Live chat + emoji reactions · No video ever leaves your friends' own accounts</sub>
 
@@ -17,7 +17,7 @@
 ## What is this?
 
 Watch Party is a Teleparty-style tool for remote movie nights. Everyone streams
-the same title from **their own** Netflix or Prime Video account, and a small
+the same title from **their own** Netflix, Prime Video, or YouTube account, and a small
 server keeps everyone's playback in step — when one person plays, pauses, or
 seeks, everyone follows. A chat sidebar with emoji reactions sits over the video.
 
@@ -41,7 +41,7 @@ It has two parts:
 - 🫥 **Collapsible, translucent overlay** — or hide it entirely and keep syncing
 - 🔗 **One-click invites** — a token bundles the server URL, room, and secret
 - 🔒 **Self-hosted & private** — no accounts, no tracking; rooms gated by a shared secret
-- 🧩 **Netflix + Prime Video**, with a pluggable adapter system for adding more sites
+- 🧩 **Netflix, Prime Video & YouTube**, with a pluggable adapter system for adding more sites
 
 ---
 
@@ -73,7 +73,7 @@ Then in Chrome: open `chrome://extensions` → turn on **Developer mode** →
 
 ### 3. Watch together
 
-1. Open a title — a Netflix `netflix.com/watch/<id>` page, or a Prime Video title that's playing.
+1. Open a title — a Netflix `netflix.com/watch/<id>` page, a Prime Video title that's playing, or a YouTube `youtube.com/watch` page.
 2. Click the **W** icon and fill in:
    - **Server URL** — `http://localhost:4000` for a local test
    - **Room code** — any shared word, e.g. `movie-night`
@@ -210,7 +210,7 @@ flowchart TB
         direction TB
         subgraph main["MAIN world"]
             inject["inject.ts<br/>picks a site adapter,<br/>reads/controls the player"]
-            adapters["players/*<br/>netflix.ts · prime.ts"]
+            adapters["players/*<br/>netflix · prime · youtube"]
             inject --- adapters
         end
         subgraph iso["ISOLATED world"]
@@ -225,8 +225,9 @@ flowchart TB
 ```
 
 - **`players/`** — one adapter per site behind a common interface
-  (`players/types.ts`). `netflix.ts` uses Netflix's private player API;
-  `prime.ts` drives the standard HTML5 `<video>`. Add a service by writing a new
+  (`players/types.ts`). `netflix.ts` uses Netflix's private player API,
+  `prime.ts` drives the standard HTML5 `<video>`, and `youtube.ts` uses
+  YouTube's `#movie_player` API. Add a service by writing a new
   adapter and registering it in `players/index.ts` — nothing else changes.
 - **Robustness tuning:** Netflix's `seek()` buffers gracefully; Prime's raw
   HTML5 seek is fragile, so its adapter rate-limits/coalesces seeks and avoids

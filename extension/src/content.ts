@@ -221,6 +221,7 @@ let cfgCache: StoredConfig | null = null;
 function onWatchPage(): boolean {
   const host = location.hostname;
   if (host.includes("netflix.com")) return /\/watch\//.test(location.pathname);
+  if (host.includes("youtube.com")) return location.pathname === "/watch";
   if (host.includes("primevideo.com") || host.includes("amazon.")) {
     // Prime has several <video> elements (the first often has no duration);
     // treat the page as "playing" if ANY video has a real content duration.
