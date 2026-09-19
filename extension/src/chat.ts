@@ -21,7 +21,7 @@ export interface ChatUI {
   showReaction(r: Reaction): void;
 }
 
-const REACTIONS = ["😂", "😮", "😍", "🔥", "👏", "💀"];
+const REACTIONS = ["❤️", "😂", "😮", "😍", "🔥", "👏", "💀"];
 
 export function mountChat(handlers: ChatHandlers): ChatUI {
   const root = document.createElement("div");
