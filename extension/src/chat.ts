@@ -115,16 +115,23 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
   return {
     addMessage(msg) {
       const el = document.createElement("div");
-      el.className = "wp-msg";
-      const t = new Date(msg.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      el.innerHTML = `<span class="wp-name"></span><span class="wp-time"></span><span class="wp-text"></span>`;
-      (el.querySelector(".wp-name") as HTMLElement).textContent = msg.name;
-      (el.querySelector(".wp-time") as HTMLElement).textContent = t;
-      (el.querySelector(".wp-text") as HTMLElement).textContent = msg.text;
+      if (msg.system) {
+        // Activity notice: a subtle centered line, no name/timestamp.
+        el.className = "wp-sys";
+        el.textContent = msg.text;
+      } else {
+        el.className = "wp-msg";
+        const t = new Date(msg.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        el.innerHTML = `<span class="wp-name"></span><span class="wp-time"></span><span class="wp-text"></span>`;
+        (el.querySelector(".wp-name") as HTMLElement).textContent = msg.name;
+        (el.querySelector(".wp-time") as HTMLElement).textContent = t;
+        (el.querySelector(".wp-text") as HTMLElement).textContent = msg.text;
+      }
       messages.appendChild(el);
       messages.scrollTop = messages.scrollHeight;
-      // Badge unread on the launcher while collapsed.
-      if (root.classList.contains("wp-collapsed")) {
+      // Badge unread on the launcher while collapsed — but only for real chat,
+      // not activity notices, to avoid noise.
+      if (!msg.system && root.classList.contains("wp-collapsed")) {
         unread++;
         refreshLauncher();
       }

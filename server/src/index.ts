@@ -27,6 +27,16 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
 
 const registry = new RoomRegistry();
 
+/** Format a position in seconds as M:SS or H:MM:SS. */
+function fmtTime(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = h ? String(m).padStart(2, "0") : String(m);
+  return (h ? `${h}:` : "") + `${mm}:${String(sec).padStart(2, "0")}`;
+}
+
 // Per-socket bookkeeping so we know which room to clean up on disconnect.
 interface SocketData {
   roomCode?: string;
@@ -35,6 +45,18 @@ interface SocketData {
 
 io.on("connection", (socket) => {
   const data: SocketData = {};
+
+  // Broadcast a server-generated activity notice to a room's chat.
+  const emitSystem = (roomCode: string, text: string) => {
+    const msg: ChatMessage = {
+      id: randomUUID(),
+      name: "",
+      text,
+      at: Date.now(),
+      system: true,
+    };
+    io.to(roomCode).emit("chatMessage", msg);
+  };
 
   socket.on("joinRoom", (payload, ack) => {
     if (JOIN_SECRET && payload.secret !== JOIN_SECRET) {
@@ -56,6 +78,7 @@ io.on("connection", (socket) => {
     const members = registry.memberList(room);
     ack({ ok: true, youAreHost: isHost, members, state: room.lastState });
     io.to(roomCode).emit("members", members);
+    emitSystem(roomCode, `${name} joined`);
     console.log(`[join] ${name} (${socket.id}) -> ${roomCode} host=${isHost}`);
   });
 
@@ -71,6 +94,15 @@ io.on("connection", (socket) => {
       };
     }
     socket.to(data.roomCode).emit("playbackEvent", { ...event, from: socket.id });
+
+    const who = data.name || "someone";
+    const verb =
+      event.action === "pause"
+        ? "paused"
+        : event.action === "play"
+        ? `resumed at ${fmtTime(event.position)}`
+        : `jumped to ${fmtTime(event.position)}`;
+    emitSystem(data.roomCode, `${who} ${verb}`);
   });
 
   socket.on("syncState", (state) => {
@@ -118,12 +150,15 @@ io.on("connection", (socket) => {
 
   const cleanup = () => {
     if (!data.roomCode) return;
-    const { room, hostChanged } = registry.leave(data.roomCode, socket.id);
+    const roomCode = data.roomCode;
+    const who = data.name || "someone";
+    const { room, hostChanged } = registry.leave(roomCode, socket.id);
     if (room) {
       io.to(room.code).emit("members", registry.memberList(room));
+      emitSystem(room.code, `${who} left`);
       if (hostChanged && room.hostId) io.to(room.code).emit("hostChanged", room.hostId);
     }
-    console.log(`[leave] ${data.name} (${socket.id}) <- ${data.roomCode}`);
+    console.log(`[leave] ${data.name} (${socket.id}) <- ${roomCode}`);
     data.roomCode = undefined;
   };
 

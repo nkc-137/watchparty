@@ -23,6 +23,8 @@ export interface ChatMessage {
   name: string;
   text: string;
   at: number;
+  /** True for server-generated activity notices (joins, pauses, seeks…). */
+  system?: boolean;
 }
 
 export interface Member {
