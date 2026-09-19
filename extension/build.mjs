@@ -7,7 +7,14 @@ const outdir = "dist";
 mkdirSync(outdir, { recursive: true });
 
 // Static assets copied verbatim into dist/.
-for (const f of ["manifest.json", "src/popup.html", "src/chat.css"]) {
+for (const f of [
+  "manifest.json",
+  "src/popup.html",
+  "src/chat.css",
+  "icons/icon16.png",
+  "icons/icon48.png",
+  "icons/icon128.png",
+]) {
   const base = f.split("/").pop();
   cpSync(f, `${outdir}/${base}`);
 }

@@ -5,7 +5,9 @@
   "description": "Chrome extension client for the Netflix watch party",
   "scripts": {
     "build": "node build.mjs",
-    "watch": "node build.mjs --watch"
+    "watch": "node build.mjs --watch",
+    "icons": "node tools/gen-icon.mjs && sips -z 48 48 icons/icon128.png --out icons/icon48.png && sips -z 16 16 icons/icon128.png --out icons/icon16.png",
+    "package": "npm run build && cd dist && zip -r -FS ../watchparty-extension.zip . -x '*.map' && cd .. && echo 'created watchparty-extension.zip'"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.0",
