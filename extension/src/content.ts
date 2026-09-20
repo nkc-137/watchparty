@@ -102,6 +102,7 @@ function connect(cfg: StoredConfig) {
   }
   applyPanelVisibility();
   ui.setStatus("connecting…");
+  ui.setConn("reconnecting");
 
   const s: WPSocket = io(cfg.serverUrl, {
     transports: ["websocket"],
@@ -116,18 +117,23 @@ function connect(cfg: StoredConfig) {
       (res: JoinRoomResult) => {
         if (!res.ok) {
           ui?.setStatus(`join failed: ${res.error}`);
+          ui?.setConn("offline");
           return;
         }
         isHost = res.youAreHost;
         ui?.setMembers(res.members);
         ui?.setStatus(statusText());
+        ui?.setConn("online");
         // Catch a late joiner up to the room's current position.
         if (res.state) apply(res.state.playing ? "play" : "pause", projected(res.state));
       }
     );
   });
 
-  s.on("disconnect", () => ui?.setStatus("reconnecting…"));
+  s.on("disconnect", () => {
+    ui?.setStatus("reconnecting…");
+    ui?.setConn("reconnecting");
+  });
 
   s.on("playbackEvent", (e) => apply(e.action, e.position));
 
@@ -177,6 +183,7 @@ function disconnect() {
     socket = null;
   }
   ui?.setStatus("offline");
+  ui?.setConn("offline");
 }
 
 /** Full teardown: drop the socket AND remove the overlay from the page. */

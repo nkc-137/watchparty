@@ -25,7 +25,26 @@
   opacity: 0.7;
 }
 #wp-launcher:hover { background: rgba(40, 40, 40, 0.85); opacity: 1; }
-#wp-launch-icon { font-size: 15px; line-height: 1; }
+/* Connection status dot (in launcher pill and panel header). */
+.wp-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #888;
+  box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+}
+#wp-root[data-conn="online"] .wp-dot { background: #37d067; }
+#wp-root[data-conn="reconnecting"] .wp-dot {
+  background: #f5c451;
+  animation: wp-pulse 1.2s ease-in-out infinite;
+}
+#wp-root[data-conn="offline"] .wp-dot { background: #ff5b5b; }
+@keyframes wp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+#wp-header .wp-dot { margin-right: 2px; }
 #wp-unread {
   display: none;
   align-items: center;

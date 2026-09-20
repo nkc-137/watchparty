@@ -18,8 +18,12 @@ export interface ChatUI {
   setMembers(members: Member[]): void;
   setStatus(text: string): void;
   setLatency(ms: number | null): void;
+  setConn(state: ConnState): void;
   showReaction(r: Reaction): void;
 }
+
+/** Connection health surfaced by the status dot. */
+export type ConnState = "online" | "reconnecting" | "offline";
 
 const REACTIONS = ["❤️", "😂", "😮", "😍", "🔥", "👏", "💀"];
 
@@ -28,14 +32,16 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
   root.id = "wp-root";
   // Start collapsed so it stays out of the way until the user opens it.
   root.className = "wp-collapsed";
+  root.dataset.conn = "reconnecting"; // until the socket connects
   root.innerHTML = `
     <button id="wp-launcher" title="Open Watch Party">
-      <span id="wp-launch-icon">🎬</span>
+      <span class="wp-dot" title="connection"></span>
       <span id="wp-launch-info">Watch Party</span>
       <span id="wp-unread"></span>
     </button>
     <div id="wp-panel">
       <div id="wp-header">
+        <span class="wp-dot" title="connection"></span>
         <span id="wp-title">Watch Party</span>
         <span id="wp-latency" title="round-trip latency"></span>
         <span id="wp-status">connecting…</span>
@@ -144,6 +150,10 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
     },
     setStatus(text) {
       statusEl.textContent = text;
+    },
+    // Colors both dots (launcher + header) via one data attribute on the root.
+    setConn(state) {
+      root.dataset.conn = state;
     },
     setLatency(ms) {
       if (ms == null) {
