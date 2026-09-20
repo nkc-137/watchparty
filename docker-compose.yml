@@ -20,3 +20,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # Cloudflare Quick Tunnel giving the Docker server a public HTTPS URL.
+  # Reaches the server over the internal compose network (no host port needed).
+  # The random *.trycloudflare.com URL appears in this container's logs and
+  # changes on every restart. Grab it with:
+  #   docker logs watchparty-tunnel-docker 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: watchparty-tunnel-docker
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://watchparty:4000
+    depends_on:
+      - watchparty
