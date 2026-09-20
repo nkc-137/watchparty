@@ -23,10 +23,11 @@ let socket: WPSocket | null = null;
 let ui: ChatUI | null = null;
 let isHost = false;
 
-// How far out of sync a follower tolerates before correcting. Prime's fragile
-// player prefers a looser threshold so we don't seek (and re-buffer) constantly.
-const IS_PRIME = /primevideo\.com|amazon\./.test(location.hostname);
-const DRIFT_TOLERANCE_SEC = IS_PRIME ? 2.5 : 1;
+// How far out of sync a follower tolerates before correcting. Fragile HTML5
+// players (Prime, Tubi) prefer a looser threshold so we don't seek (and
+// re-buffer) constantly.
+const IS_FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com/.test(location.hostname);
+const DRIFT_TOLERANCE_SEC = IS_FRAGILE_HTML5 ? 2.5 : 1;
 
 // Latest known local player state (fed by the page's periodic samples).
 let local: { position: number; playing: boolean; videoId: number | null } = {
@@ -222,9 +223,14 @@ function onWatchPage(): boolean {
   const host = location.hostname;
   if (host.includes("netflix.com")) return /\/watch\//.test(location.pathname);
   if (host.includes("youtube.com")) return location.pathname === "/watch";
-  if (host.includes("primevideo.com") || host.includes("amazon.")) {
-    // Prime has several <video> elements (the first often has no duration);
-    // treat the page as "playing" if ANY video has a real content duration.
+  if (
+    host.includes("primevideo.com") ||
+    host.includes("amazon.") ||
+    host.includes("tubitv.com")
+  ) {
+    // These sites have several <video> elements (the first often has no
+    // duration); treat the page as "playing" if ANY video has a real content
+    // duration.
     return Array.from(document.querySelectorAll("video")).some(
       (v) => isFinite(v.duration) && v.duration > 60
     );
