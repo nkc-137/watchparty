@@ -1,0 +1,22 @@
+# Second Watch Party sync server, in Docker (alongside the systemd one on :4000).
+# Host port 4001 -> container 4000 to avoid clashing with the existing server.
+#
+# Deploy via Portainer (Stacks -> Add stack -> Repository, pointing at this repo)
+# or with:  JOIN_SECRET=yourpass docker compose up -d --build
+services:
+  watchparty:
+    build: ./server
+    image: watchparty-server
+    container_name: watchparty-docker
+    restart: unless-stopped
+    ports:
+      - "4001:4000"
+    environment:
+      # Set JOIN_SECRET in Portainer's env / a .env file. Falls back to changeme.
+      - JOIN_SECRET=${JOIN_SECRET:-changeme}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
