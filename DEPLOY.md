@@ -1,21 +1,94 @@
-# Deploying on the old PC (Linux + Cloudflare Quick Tunnel)
+# Deploying the sync server (Linux)
 
-Goal: the sync server runs 24/7 on your old Linux PC, reachable over public
-HTTPS via a **free** Cloudflare Quick Tunnel — no domain, no router
-port-forwarding (the tunnel dials *out* to Cloudflare).
+Goal: the sync server runs 24/7 on a spare Linux PC, reachable over public HTTPS
+via a **free** Cloudflare Quick Tunnel — no domain, no router port-forwarding
+(the tunnel dials *out* to Cloudflare).
 
 Trade-off: a Quick Tunnel's URL is **random and changes on every restart/reboot**.
-You fetch the current URL and reshare an invite each session (helper below).
-Want a URL that never changes? See "Optional: stable named tunnel" at the end.
+You fetch the current URL and reshare an invite each session. Want a URL that
+never changes? See "Optional: stable named tunnel" at the end.
 
-Assumes a Debian/Ubuntu-family distro (`apt`), x86-64. Run everything **on the
-old PC** (SSH in, or sit at it). Lines starting with `$` are commands.
+There are two ways to run it. **Docker is the recommended path** (server + tunnel
+in one stack, easy to manage in Portainer and monitor in Uptime Kuma). The
+systemd path is kept below as an alternative for a no-Docker setup.
 
 ---
 
+## Recommended: Docker stack (server + tunnel)
+
+The repo ships a `docker-compose.yml` that runs **two containers**:
+
+- `watchparty-docker` — the sync server, host port **4001** → container 4000,
+  with a healthcheck.
+- `watchparty-tunnel-docker` — a Cloudflare Quick Tunnel reaching the server over
+  the internal Docker network (`http://watchparty:4000`); no host port needed.
+
+### Deploy with Portainer (Git stack)
+
+1. **Stacks → Add stack → Repository**.
+2. Repository URL: `https://github.com/nkc-137/watchparty`
+3. Reference: `refs/heads/main`, Compose path: `docker-compose.yml`
+4. Add an environment variable **`JOIN_SECRET`** = your shared party password.
+5. **Deploy the stack.** Portainer builds the image from `server/Dockerfile` and
+   starts both containers. (The server service uses `build:` only — no registry
+   pull — so don't enable any "re-pull image" toggle.)
+
+### Or deploy with the Docker CLI
+
+```bash
+$ git clone https://github.com/nkc-137/watchparty ~/watchparty   # or git pull
+$ cd ~/watchparty
+$ JOIN_SECRET=your-party-password docker compose up -d --build
+```
+
+### Get the public URL
+
+```bash
+$ docker logs watchparty-tunnel-docker 2>&1 | grep trycloudflare
+```
+
+Handy helper for `~/.bashrc`:
+
+```bash
+party-url-docker() {
+  docker logs watchparty-tunnel-docker 2>&1 \
+    | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1
+}
+```
+
+### Verify
+
+```bash
+$ curl -s localhost:4001/health                    # {"ok":true,...}  (LAN)
+$ curl -s "$(party-url-docker)/health"             # {"ok":true,...}  (internet)
+```
+
+### Monitor with Uptime Kuma
+
+Add an **HTTP(s)** monitor to `http://<laptop-lan-ip>:4001/health` (use the LAN
+IP, not `localhost`, if Kuma itself runs in Docker). Keep this LAN monitor as the
+source of truth; a monitor on the public `trycloudflare.com` URL will go red
+after each redeploy because that URL changes.
+
+### Updating
+
+Push server changes, then in Portainer hit **Pull and redeploy** (or CLI:
+`git pull && docker compose up -d --build`). The public URL changes on redeploy —
+re-grab it with `party-url-docker` and reshare the invite.
+
+---
+
+# Alternative: systemd (no Docker)
+
+Assumes a Debian/Ubuntu-family distro (`apt`), x86-64. Run everything **on the
+PC** (SSH in, or sit at it). Lines starting with `$` are commands.
+
+> Note: the server listens on `:4000` here. If the Docker stack (`:4001`) is also
+> running, the two coexist fine on different ports.
+
 ## 0. Prerequisites
 
-- The old PC is on and connected to the internet. That's it — no domain needed.
+- The PC is on and connected to the internet. That's it — no domain needed.
 
 ---
 

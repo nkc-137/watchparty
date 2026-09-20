@@ -91,11 +91,12 @@ Then in Chrome: open `chrome://extensions` → turn on **Developer mode** →
 For actual movie nights the server should run 24/7 on a spare machine and be
 reachable over the internet. The recommended free setup:
 
-- Run the server as a **systemd service** on a Linux PC.
+- Run the server + tunnel as a **Docker stack** on a Linux PC (manage it in
+  Portainer, monitor it in Uptime Kuma). A `systemd` path is also documented.
 - Expose it with a free **Cloudflare Quick Tunnel** (no domain, no router setup).
 
-👉 **Full step-by-step in [DEPLOY.md](DEPLOY.md)** — Node install, the service
-files, the tunnel, and a `party-url` helper.
+👉 **Full step-by-step in [DEPLOY.md](DEPLOY.md)** — the Docker `docker-compose.yml`
+stack, the tunnel, a `party-url` helper, and the systemd alternative.
 
 The Quick Tunnel gives a public HTTPS URL like
 `https://something-random.trycloudflare.com`. It's free but **changes on every
