@@ -6,7 +6,6 @@
 services:
   watchparty:
     build: ./server
-    image: watchparty-server
     container_name: watchparty-docker
     restart: unless-stopped
     ports:
