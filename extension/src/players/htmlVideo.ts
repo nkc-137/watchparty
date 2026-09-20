@@ -18,12 +18,16 @@ function contentVideo(): HTMLVideoElement | null {
     if (!isFinite(v.duration) || v.duration <= 0) continue;
     const r = v.getBoundingClientRect();
     const area = r.width * r.height;
-    if (area >= bestArea) {
+    // Prefer the largest *visible* video, so a hidden/off-screen ad player
+    // (zero area) never wins over the real, on-screen content video.
+    if (area > 0 && area > bestArea) {
       best = v;
       bestArea = area;
     }
   }
-  return best || vids[0] || null;
+  // Fall back to any video with a duration, then any video at all, if none
+  // were visible yet (e.g. still laying out).
+  return best || vids.find((v) => isFinite(v.duration) && v.duration > 0) || vids[0] || null;
 }
 
 export interface HtmlVideoTuning {
