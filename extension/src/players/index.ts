@@ -6,6 +6,7 @@ import { netflixAdapter } from "./netflix";
 import { primeAdapter } from "./prime";
 import { youtubeAdapter } from "./youtube";
 import { tubiAdapter } from "./tubi";
+import { plutoAdapter } from "./pluto";
 
 export type { PlayerAdapter } from "./types";
 
@@ -15,5 +16,6 @@ export function selectAdapter(host = location.hostname): PlayerAdapter | null {
     return primeAdapter;
   if (host.includes("youtube.com")) return youtubeAdapter;
   if (host.includes("tubitv.com")) return tubiAdapter;
+  if (host.includes("pluto.tv")) return plutoAdapter;
   return null;
 }

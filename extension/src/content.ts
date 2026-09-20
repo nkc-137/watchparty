@@ -26,7 +26,7 @@ let isHost = false;
 // How far out of sync a follower tolerates before correcting. Fragile HTML5
 // players (Prime, Tubi) prefer a looser threshold so we don't seek (and
 // re-buffer) constantly.
-const IS_FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com/.test(location.hostname);
+const IS_FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com|pluto\.tv/.test(location.hostname);
 const DRIFT_TOLERANCE_SEC = IS_FRAGILE_HTML5 ? 2.5 : 1;
 
 // Latest known local player state (fed by the page's periodic samples).
@@ -226,7 +226,8 @@ function onWatchPage(): boolean {
   if (
     host.includes("primevideo.com") ||
     host.includes("amazon.") ||
-    host.includes("tubitv.com")
+    host.includes("tubitv.com") ||
+    host.includes("pluto.tv")
   ) {
     // These sites have several <video> elements (the first often has no
     // duration); treat the page as "playing" if ANY video has a real content

@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Watch Party (Netflix + Prime + YouTube + Tubi)",
+  "name": "Watch Party",
   "version": "0.3.0",
-  "description": "Self-hosted watch party sync + chat for Netflix, Amazon Prime Video, YouTube, and Tubi.",
+  "description": "Self-hosted watch party sync + chat for Netflix, Amazon Prime Video, YouTube, Tubi, and Pluto TV.",
   "permissions": ["storage"],
   "host_permissions": [
     "*://*.netflix.com/*",
     "*://*.primevideo.com/*",
     "*://*.amazon.com/gp/video/*",
     "*://*.youtube.com/*",
-    "*://*.tubitv.com/*"
+    "*://*.tubitv.com/*",
+    "*://*.pluto.tv/*"
   ],
   "icons": {
     "16": "icon16.png",
@@ -35,7 +36,8 @@
         "*://*.primevideo.com/*",
         "*://*.amazon.com/gp/video/*",
         "*://*.youtube.com/*",
-        "*://*.tubitv.com/*"
+        "*://*.tubitv.com/*",
+        "*://*.pluto.tv/*"
       ],
       "js": ["inject.js"],
       "world": "MAIN",
@@ -47,7 +49,8 @@
         "*://*.primevideo.com/*",
         "*://*.amazon.com/gp/video/*",
         "*://*.youtube.com/*",
-        "*://*.tubitv.com/*"
+        "*://*.tubitv.com/*",
+        "*://*.pluto.tv/*"
       ],
       "js": ["content.js"],
       "css": ["chat.css"],
