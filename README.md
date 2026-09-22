@@ -297,7 +297,7 @@ wrong-title detection, and the buffering holds:
 ```bash
 cd server
 npm install
-npm test            # -> "26/26 passed" then "PASS"
+npm test            # -> "27/27 passed" then "PASS"
 ```
 
 No framework or extra services required — it's a self-contained runner

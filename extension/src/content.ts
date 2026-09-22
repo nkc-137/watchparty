@@ -161,7 +161,8 @@ function connect(cfg: StoredConfig) {
       onSend: (text) => socket?.emit("chatMessage", text),
       onReaction: (emoji) => {
         socket?.emit("reaction", emoji);
-        ui?.showReaction({ name: cfg.name, emoji, at: Date.now() }); // instant local feedback
+        // Instant local feedback; tagged with our own id so the echo is dropped.
+        ui?.showReaction({ name: cfg.name, emoji, at: Date.now(), from: socket?.id ?? "" });
       },
       onResync: () => socket?.emit("requestSync"),
     });
@@ -255,7 +256,7 @@ function connect(cfg: StoredConfig) {
 
   // Show reactions from others (we already rendered our own optimistically).
   s.on("reaction", (r) => {
-    if (r.name === cfg.name) return;
+    if (r.from === s.id) return;
     ui?.showReaction(r);
   });
 

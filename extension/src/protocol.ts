@@ -109,6 +109,12 @@ export interface Reaction {
   name: string;
   emoji: string;
   at: number;
+  /**
+   * Sender's socket id. The sender renders its own reaction optimistically and
+   * needs to drop the echo — names can't do that, since two friends called
+   * "Sam" would silently swallow each other's reactions.
+   */
+  from: string;
 }
 
 export interface ClientToServerEvents {

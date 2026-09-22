@@ -370,6 +370,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
         name: data.name || "guest",
         emoji: clean,
         at: Date.now(),
+        from: socket.id,
       });
     });
 

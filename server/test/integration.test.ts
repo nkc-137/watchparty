@@ -188,7 +188,26 @@ test("reaction relays to the room", async () => {
   const r = await got;
   assert.strictEqual(r.emoji, "🔥");
   assert.strictEqual(r.name, "alice");
+  assert.strictEqual(r.from, a.id, "carries the sender's socket id");
   cleanup();
+});
+
+test("reactions from two members with the same name stay distinguishable", async () => {
+  // Clients drop the echo of their own reaction. Matching on the display name
+  // meant two friends both called "Sam" cancelled each other out, so each saw
+  // only their own; `from` is what makes the two senders tellable apart.
+  const sam1 = await connect();
+  const sam2 = await connect();
+  await join(sam1, { roomCode: "same-name", name: "Sam" });
+  await join(sam2, { roomCode: "same-name", name: "Sam" });
+
+  const seenBySam2 = waitFor(sam2, "reaction");
+  sam1.emit("reaction", "😂");
+  const r = await seenBySam2;
+
+  assert.strictEqual(r.name, "Sam", "same display name as the receiver");
+  assert.strictEqual(r.from, sam1.id, "but attributed to the actual sender");
+  assert.notStrictEqual(r.from, sam2.id, "so the receiver won't mistake it for its own");
 });
 
 test("ping acks with a server timestamp", async () => {
