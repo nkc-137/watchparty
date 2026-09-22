@@ -130,6 +130,19 @@ test("connSig ignores display-only settings so the overlay toggle can't drop the
   );
 });
 
+test("connSig treats the master switch as connection-relevant", () => {
+  // Flipping it must change the signature, because that is what triggers the
+  // teardown that closes the socket and removes the overlay. If it were
+  // excluded, switching off would leave a live connection behind.
+  assert.notStrictEqual(connSig(cfg({ enabled: false })), connSig(cfg({ enabled: true })));
+});
+
+test("connSig treats a missing master switch as on", () => {
+  // Installs predating the switch have no `enabled` field; they must not look
+  // like a config change and reconnect on upgrade.
+  assert.strictEqual(connSig(cfg({ enabled: undefined })), connSig(cfg({ enabled: true })));
+});
+
 test("connSig changes when anything connection-relevant changes", () => {
   const base = connSig(cfg());
   assert.notStrictEqual(connSig(cfg({ roomCode: "other" })), base);

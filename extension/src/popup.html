@@ -25,7 +25,7 @@
       }
       #join { background: #e50914; color: #fff; }
       #leave { background: #333; color: #fff; }
-      #toggle-row {
+      .toggle-row {
         display: flex; align-items: center; justify-content: space-between;
         gap: 10px; margin-top: 12px; font-size: 12px; cursor: pointer; opacity: 0.9;
       }
@@ -43,11 +43,28 @@
       .switch input:checked + .slider { background: #e50914; }
       .switch input:checked + .slider::before { transform: translateX(16px); }
       #msg { margin-top: 10px; font-size: 11px; min-height: 14px; opacity: 0.85; }
+      /* The master switch sits above a rule; everything under it is what the
+         switch governs, and dims to show that it is inert. */
+      #master-row {
+        margin: 0 0 12px; padding-bottom: 12px;
+        border-bottom: 1px solid #2a2a2a; font-size: 13px; opacity: 1;
+      }
+      #master-row span:first-child { font-weight: 600; }
+      #controls { transition: opacity 0.15s; }
+      body.off #controls { opacity: 0.4; pointer-events: none; }
       .hint { font-size: 10px; opacity: 0.5; margin-top: 2px; }
     </style>
   </head>
   <body>
     <h1>Watch Party</h1>
+    <label id="master-row" class="toggle-row" for="enabled">
+      <span>Extension enabled</span>
+      <span class="switch">
+        <input id="enabled" type="checkbox" checked />
+        <span class="slider"></span>
+      </span>
+    </label>
+    <div id="controls">
     <label>Server URL</label>
     <input id="serverUrl" placeholder="https://party.example.com" />
     <label>Room code</label>
@@ -64,13 +81,14 @@
       <button id="copy">Copy invite</button>
       <button id="paste">Paste invite</button>
     </div>
-    <label id="toggle-row" for="showPanel">
+    <label id="toggle-row" class="toggle-row" for="showPanel">
       <span>Show chat overlay on the video</span>
       <span class="switch">
         <input id="showPanel" type="checkbox" checked />
         <span class="slider"></span>
       </span>
     </label>
+    </div>
     <div id="msg"></div>
     <div class="hint">Open a title on Netflix, Prime Video, YouTube, Tubi, or Pluto TV, then Join. Everyone must be on the same title.</div>
     <script src="popup.js"></script>

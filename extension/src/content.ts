@@ -327,8 +327,13 @@ function onWatchPage(): boolean {
   return isWatchPage(location.hostname, location.pathname, durations);
 }
 
+/** Master switch: off means fully dormant — no socket, no overlay, no events. */
+function isEnabled(): boolean {
+  return cfgCache?.enabled !== false; // default on
+}
+
 function shouldConnect(): boolean {
-  return !!(cfgCache && cfgCache.connected && cfgCache.serverUrl && cfgCache.roomCode && onWatchPage());
+  return !!(isEnabled() && cfgCache && cfgCache.connected && cfgCache.serverUrl && cfgCache.roomCode && onWatchPage());
 }
 
 /** Show/hide the whole overlay (launcher + panel) per the popup toggle. */

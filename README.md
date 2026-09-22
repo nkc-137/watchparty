@@ -41,6 +41,7 @@ It has two parts:
 - ⏳ **Buffer gate** — nobody starts until everyone has buffered, and if one person stalls mid-film the room parks and resumes together
 - 🎯 **Wrong-title detection** — if someone opens a different episode, the room says so and ignores their play/pause/seek instead of dragging everyone to a meaningless timestamp
 - 📶 **Latency badge** + one-click **⟳ resync** to snap back to the host
+- 🔌 **Master on/off switch** — one toggle makes the extension fully dormant: no socket, no events, no overlay, with your room config kept for next time
 - 🫥 **Collapsible, translucent overlay** — or hide it entirely and keep syncing
 - 🔗 **One-click invites** — a token bundles the server URL, room, and secret
 - 🔒 **Self-hosted & private** — no accounts, no tracking; rooms gated by a shared secret, with an origin allowlist, per-room size cap and flood limits on by default
@@ -321,7 +322,7 @@ browser, framework or DOM shim (esbuild bundles them; see `test/run.mjs`):
 ```bash
 cd extension
 npm install
-npm test            # -> "20/20 passed" then "PASS"
+npm test            # -> "22/22 passed" then "PASS"
 ```
 
 One of them imports **both** copies of `protocol.ts` and asserts they agree, so

@@ -94,7 +94,9 @@ export function isWatchPage(
  * toggling the overlay doesn't tear down a live connection mid-film.
  */
 export function connSig(c: StoredConfig | null): string {
-  return c ? [c.connected, c.serverUrl, c.roomCode, c.name, c.secret].join("|") : "";
+  return c
+    ? [c.enabled !== false, c.connected, c.serverUrl, c.roomCode, c.name, c.secret].join("|")
+    : "";
 }
 
 /** Whether two content descriptions are the same, nulls included. */

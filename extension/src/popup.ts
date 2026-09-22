@@ -16,6 +16,11 @@ function fields(): Omit<StoredConfig, "connected"> {
   };
 }
 
+/** Dim and disable everything the master switch governs when it's off. */
+function applyEnabledUI(on: boolean) {
+  document.body.classList.toggle("off", !on);
+}
+
 function restore() {
   chrome.storage.local.get("wp", (r) => {
     const cfg = r.wp as StoredConfig | undefined;
@@ -25,9 +30,25 @@ function restore() {
     $("name").value = cfg.name || "";
     $("secret").value = cfg.secret || "";
     $("showPanel").checked = cfg.showPanel !== false; // default on
-    if (cfg.connected) msg().textContent = `In room "${cfg.roomCode}".`;
+    $("enabled").checked = cfg.enabled !== false; // default on
+    applyEnabledUI(cfg.enabled !== false);
+    if (cfg.enabled === false) msg().textContent = "Extension is off.";
+    else if (cfg.connected) msg().textContent = `In room "${cfg.roomCode}".`;
   });
 }
+
+// The master switch. Off makes the content script tear down completely — the
+// socket leaves the room and closes, and the overlay is removed — so nothing is
+// sent or received. The room config is kept so switching back on rejoins.
+$("enabled").addEventListener("change", () => {
+  const on = $("enabled").checked;
+  applyEnabledUI(on);
+  chrome.storage.local.get("wp", (r) => {
+    const cfg = (r.wp as StoredConfig) || ({} as StoredConfig);
+    chrome.storage.local.set({ wp: { ...cfg, enabled: on } });
+    msg().textContent = on ? "Extension on." : "Extension off — sync and chat stopped.";
+  });
+});
 
 // Toggling the overlay updates config live — sync keeps running either way.
 $("showPanel").addEventListener("change", () => {
@@ -35,7 +56,10 @@ $("showPanel").addEventListener("change", () => {
   chrome.storage.local.get("wp", (r) => {
     const cfg = (r.wp as StoredConfig) || ({} as StoredConfig);
     chrome.storage.local.set({ wp: { ...cfg, showPanel: show } });
-    msg().textContent = show ? "Chat overlay shown." : "Chat overlay hidden.";
+    const base = show ? "Chat overlay shown." : "Chat overlay hidden.";
+    // With the master switch off there is no overlay on the page at all, so
+    // say the setting was saved rather than implying it took effect.
+    msg().textContent = cfg.enabled === false ? `${base} (Extension is off.)` : base;
   });
 });
 
@@ -45,7 +69,12 @@ document.getElementById("join")!.addEventListener("click", () => {
     msg().textContent = "Server URL and room code are required.";
     return;
   }
-  const cfg: StoredConfig = { ...f, connected: true, showPanel: $("showPanel").checked };
+  const cfg: StoredConfig = {
+    ...f,
+    connected: true,
+    enabled: $("enabled").checked,
+    showPanel: $("showPanel").checked,
+  };
   chrome.storage.local.set({ wp: cfg }, () => {
     msg().textContent = `Joining "${f.roomCode}"… (make sure a Netflix title is open)`;
   });

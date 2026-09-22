@@ -157,6 +157,12 @@ export interface StoredConfig {
   name: string;
   secret: string;
   connected: boolean;
+  /**
+   * Master switch. When false the extension goes fully dormant: no socket, no
+   * events in or out, no overlay. The room config is kept, so switching back on
+   * rejoins where you left off. Defaults to on.
+   */
+  enabled?: boolean;
   /** Show the on-screen chat/dashboard overlay. Sync still runs when hidden. */
   showPanel?: boolean;
 }
