@@ -43,7 +43,7 @@ It has two parts:
 - 📶 **Latency badge** + one-click **⟳ resync** to snap back to the host
 - 🫥 **Collapsible, translucent overlay** — or hide it entirely and keep syncing
 - 🔗 **One-click invites** — a token bundles the server URL, room, and secret
-- 🔒 **Self-hosted & private** — no accounts, no tracking; rooms gated by a shared secret
+- 🔒 **Self-hosted & private** — no accounts, no tracking; rooms gated by a shared secret, with an origin allowlist, per-room size cap and flood limits on by default
 - 🧩 **Netflix, Prime Video, YouTube, Tubi & Pluto TV**, with a pluggable adapter system for adding more sites
 
 ---
@@ -265,6 +265,7 @@ watchparty/
 │   │   ├── app.ts          # server factory (rooms, relay, activity notices)
 │   │   ├── index.ts        # entry point (reads env, listens)
 │   │   ├── rooms.ts        # room registry, host election, chat scrollback
+│   │   ├── limits.ts       # origin allowlist, rate limits, secret compare
 │   │   └── protocol.ts     # shared wire types
 │   ├── test/               # automated integration suite (npm test)
 │   └── scripts/            # smoke test + virtual-participant harness
@@ -293,12 +294,12 @@ The server has an integration suite that boots the **real** server on an
 ephemeral port and drives it with **real** Socket.IO clients — covering rooms,
 host election/handoff, play/pause/seek relay, chat, reactions, activity notices,
 the `JOIN_SECRET` gate, drift/`requestSync`, late-joiner state, and
-wrong-title detection, the buffering holds, and chat history:
+wrong-title detection, the buffering holds, chat history, and the abuse controls:
 
 ```bash
 cd server
 npm install
-npm test            # -> "32/32 passed" then "PASS"
+npm test            # -> "42/42 passed" then "PASS"
 ```
 
 No framework or extra services required — it's a self-contained runner

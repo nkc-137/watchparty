@@ -285,7 +285,18 @@ cd ~/watchparty/server && npm install && npm run build && sudo systemctl restart
 ## Security notes
 
 - Keep `JOIN_SECRET` set and non-trivial; rotate it by editing the service file
-  and `sudo systemctl daemon-reload && sudo systemctl restart watchparty`.
+  and `sudo systemctl daemon-reload && sudo systemctl restart watchparty`. It is
+  compared in constant time, so a wrong guess leaks nothing about the real one.
+- The server ships with abuse controls on by default, all tunable by env var:
+
+  | Variable | Default | What it does |
+  | --- | --- | --- |
+  | `ALLOWED_ORIGINS` | the streaming sites | Comma-separated browser origins allowed to open a socket. `*` accepts any site (the old behavior) — only set it if you connect from a custom page. |
+  | `MAX_ROOM_SIZE` | `20` | Members per room; further joins are refused with "room is full". |
+
+  Per-socket flood limits on chat, reactions and playback events are always on.
+  They are generous enough that a real movie night never notices, and a member
+  who trips one is told privately to slow down.
 - The server only relays timing + chat text, never video or credentials, so the
   exposure surface is tiny — but the secret still keeps randoms out of your rooms.
 - No inbound firewall changes are needed; the tunnel is an outbound connection.

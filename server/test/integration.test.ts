@@ -14,6 +14,12 @@ import { io, Socket } from "socket.io-client";
 import { createApp, RunningApp } from "../src/app";
 import { MAX_HISTORY } from "../src/rooms";
 import {
+  RateLimiter,
+  originAllowed,
+  parseAllowedOrigins,
+  secretMatches,
+} from "../src/limits";
+import {
   ServerToClientEvents,
   ClientToServerEvents,
   JoinRoomResult,
@@ -667,9 +673,188 @@ test("history does not leak between rooms", async () => {
   assert.deepStrictEqual(res.history, [], "a different room starts empty");
 });
 
+
+// ---- abuse controls ---------------------------------------------------------
+
+/** Connect + join against a purpose-built app. */
+async function joinAt(url: string, room: string, name: string): Promise<Client> {
+  const c: Client = io(url, { transports: ["websocket"], forceNew: true });
+  opened.push(c);
+  await new Promise((r) => c.on("connect", r));
+  await new Promise((res) => c.emit("joinRoom", { roomCode: room, name }, res));
+  return c;
+}
+
+test("originAllowed accepts the streaming sites and nothing else", async () => {
+  for (const o of [
+    "https://www.netflix.com",
+    "https://www.primevideo.com",
+    "https://www.amazon.com",
+    "https://www.youtube.com",
+    "https://tubitv.com",
+    "https://pluto.tv",
+  ]) {
+    assert.strictEqual(originAllowed(o), true, o);
+  }
+  assert.strictEqual(originAllowed("https://evil.example"), false, "a random site");
+  // Near-misses must not slip through a sloppy substring match.
+  assert.strictEqual(originAllowed("https://netflix.com.evil.example"), false, "suffix trick");
+  assert.strictEqual(originAllowed("https://notnetflix.com"), false, "prefix trick");
+  // Non-browser clients send no Origin; JOIN_SECRET is what gates them.
+  assert.strictEqual(originAllowed(undefined), true, "no origin");
+});
+
+test("originAllowed honors an explicit allowlist and the wildcard", async () => {
+  assert.strictEqual(originAllowed("https://my.site", ["https://my.site"]), true);
+  assert.strictEqual(originAllowed("https://www.netflix.com", ["https://my.site"]), false,
+    "an explicit list replaces the defaults");
+  assert.strictEqual(originAllowed("https://evil.example", "*"), true, "wildcard opts out");
+});
+
+test("parseAllowedOrigins reads the env var", async () => {
+  assert.strictEqual(parseAllowedOrigins(undefined), undefined, "unset -> built-in list");
+  assert.strictEqual(parseAllowedOrigins("  "), undefined, "blank -> built-in list");
+  assert.strictEqual(parseAllowedOrigins("*"), "*");
+  assert.deepStrictEqual(parseAllowedOrigins("https://a, https://b"), ["https://a", "https://b"]);
+});
+
+test("secretMatches is exact, and survives length mismatches", async () => {
+  assert.strictEqual(secretMatches("movie-night", "movie-night"), true);
+  assert.strictEqual(secretMatches("movie-night", "movie-nigh"), false, "shorter");
+  assert.strictEqual(secretMatches("movie-night", "movie-nightX"), false, "longer");
+  assert.strictEqual(secretMatches("movie-night", ""), false);
+  // A non-string must not throw its way past the gate.
+  assert.strictEqual(secretMatches("movie-night", undefined), false);
+  assert.strictEqual(secretMatches("movie-night", { toString: () => "movie-night" }), false);
+});
+
+test("RateLimiter allows a burst up to the limit, then refuses until the window rolls", async () => {
+  const rl = new RateLimiter({ limit: 3, windowMs: 1000 });
+  assert.deepStrictEqual(
+    [rl.allow(0), rl.allow(0), rl.allow(0), rl.allow(0)],
+    [true, true, true, false],
+    "fourth in the window is refused"
+  );
+  assert.strictEqual(rl.allow(1000), true, "new window, allowed again");
+});
+
+test("RateLimiter reports the moment it goes over, exactly once", async () => {
+  const rl = new RateLimiter({ limit: 2, windowMs: 1000 });
+  rl.allow(0);
+  rl.allow(0);
+  assert.strictEqual(rl.justExceeded(0), false, "not over yet");
+  rl.allow(0);
+  assert.strictEqual(rl.justExceeded(0), true, "first rejection warns");
+  rl.allow(0);
+  assert.strictEqual(rl.justExceeded(0), false, "further rejections stay quiet");
+});
+
+test("a chat flood is dropped and the sender is told once", async () => {
+  const strict = createApp({ quiet: true, rateLimits: { chat: { limit: 2, windowMs: 60_000 } } });
+  const port = await strict.listen(0);
+  const url = `http://localhost:${port}`;
+
+  const spammer = await joinAt(url, "flood", "Spammer");
+  const bystander = await joinAt(url, "flood", "Bystander");
+
+  const seen: string[] = [];
+  bystander.on("chatMessage", (m) => { if (!m.system) seen.push(m.text); });
+  const warnings: string[] = [];
+  spammer.on("chatMessage", (m) => { if (m.system && m.text.includes("too fast")) warnings.push(m.text); });
+
+  for (const t of ["1", "2", "3", "4", "5"]) spammer.emit("chatMessage", t);
+  await new Promise((r) => setTimeout(r, 200));
+
+  assert.deepStrictEqual(seen, ["1", "2"], "only the allowance gets through");
+  assert.strictEqual(warnings.length, 1, "warned once, not per dropped message");
+
+  await strict.close();
+});
+
+test("a seek storm is throttled too", async () => {
+  const strict = createApp({
+    quiet: true,
+    rateLimits: { playback: { limit: 2, windowMs: 60_000 } },
+  });
+  const port = await strict.listen(0);
+  const url = `http://localhost:${port}`;
+
+  const host = await joinAt(url, "storm", "Host");
+  const victim = await joinAt(url, "storm", "Victim");
+
+  const relayed: number[] = [];
+  victim.on("playbackEvent", (e) => relayed.push(e.position));
+  for (let i = 0; i < 6; i++) {
+    host.emit("playbackEvent", { action: "seek", position: i, at: Date.now() });
+  }
+  await new Promise((r) => setTimeout(r, 200));
+
+  assert.deepStrictEqual(relayed, [0, 1], "the rest are dropped, not relayed");
+  await strict.close();
+});
+
+test("a room refuses members past its cap", async () => {
+  const small = createApp({ quiet: true, maxRoomSize: 2 });
+  const port = await small.listen(0);
+  const url = `http://localhost:${port}`;
+
+  await joinAt(url, "tiny", "One");
+  await joinAt(url, "tiny", "Two");
+
+  const third: Client = io(url, { transports: ["websocket"], forceNew: true });
+  opened.push(third);
+  await new Promise((r) => third.on("connect", r));
+  const res: JoinRoomResult = await new Promise((r) =>
+    third.emit("joinRoom", { roomCode: "tiny", name: "Three" }, r)
+  );
+
+  assert.strictEqual(res.ok, false, "turned away");
+  assert.strictEqual(res.error, "room is full");
+  await small.close();
+});
+
+test("the cap is per room, and frees up when someone leaves", async () => {
+  const small = createApp({ quiet: true, maxRoomSize: 1 });
+  const port = await small.listen(0);
+  const url = `http://localhost:${port}`;
+
+  const only = await joinAt(url, "cap-a", "Only");
+  // A different room is unaffected by another room being full.
+  const other: JoinRoomResult = await new Promise(async (r) => {
+    const c: Client = io(url, { transports: ["websocket"], forceNew: true });
+    opened.push(c);
+    await new Promise((ok) => c.on("connect", ok));
+    c.emit("joinRoom", { roomCode: "cap-b", name: "Elsewhere" }, r);
+  });
+  assert.strictEqual(other.ok, true, "a different room still accepts joins");
+
+  only.disconnect();
+  await new Promise((r) => setTimeout(r, 120));
+
+  const replacement: JoinRoomResult = await new Promise(async (r) => {
+    const c: Client = io(url, { transports: ["websocket"], forceNew: true });
+    opened.push(c);
+    await new Promise((ok) => c.on("connect", ok));
+    c.emit("joinRoom", { roomCode: "cap-a", name: "Replacement" }, r);
+  });
+  assert.strictEqual(replacement.ok, true, "the seat is free again");
+  await small.close();
+});
+
 // ---- runner -----------------------------------------------------------------
 async function main() {
-  const app: RunningApp = createApp({ quiet: true });
+  // The shared app runs with the flood limits effectively off: the behavioral
+  // tests below send bursts no real client would, and throttling them would
+  // only test the limiter by accident. The limits get their own apps, tuned
+  // low, in the abuse-controls section.
+  const app: RunningApp = createApp({
+    quiet: true,
+    rateLimits: {
+      chat: { limit: 10_000, windowMs: 1000 },
+      reaction: { limit: 10_000, windowMs: 1000 },
+      playback: { limit: 10_000, windowMs: 1000 },
+    },
+  });
   const port = await app.listen(0);
   BASE = `http://localhost:${port}`;
 

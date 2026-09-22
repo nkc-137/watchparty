@@ -5,6 +5,12 @@ import express from "express";
 import { Server } from "socket.io";
 import { Room, RoomMember, RoomRegistry } from "./rooms";
 import {
+  RateLimit,
+  RateLimiter,
+  originAllowed,
+  secretMatches,
+} from "./limits";
+import {
   ClientToServerEvents,
   ServerToClientEvents,
   ChatMessage,
@@ -22,6 +28,15 @@ export interface AppOptions {
    * playing without them. Configurable so tests don't have to sleep.
    */
   holdTimeoutMs?: number;
+  /**
+   * Browser origins allowed to open a socket. Unset means the streaming sites
+   * the extension runs on; "*" accepts anything (the pre-hardening behavior).
+   */
+  allowedOrigins?: string[] | "*";
+  /** Refuse joins past this many members in one room. */
+  maxRoomSize?: number;
+  /** Per-socket flood limits. Overridable so tests don't have to send 100 messages. */
+  rateLimits?: Partial<Record<"chat" | "reaction" | "playback", RateLimit>>;
 }
 
 export interface RunningApp {
@@ -68,6 +83,15 @@ export function sanitizeContent(info: unknown): ContentInfo {
 export function createApp(opts: AppOptions = {}): RunningApp {
   const JOIN_SECRET = opts.joinSecret || "";
   const HOLD_TIMEOUT_MS = opts.holdTimeoutMs ?? 20_000;
+  const MAX_ROOM_SIZE = opts.maxRoomSize ?? 20;
+  // Generous enough that no real movie night notices, tight enough that a
+  // script can't drown the room.
+  const LIMITS: Record<"chat" | "reaction" | "playback", RateLimit> = {
+    chat: { limit: 10, windowMs: 10_000 },
+    reaction: { limit: 20, windowMs: 10_000 },
+    playback: { limit: 30, windowMs: 10_000 },
+    ...opts.rateLimits,
+  };
   const log = opts.quiet ? () => {} : (...a: unknown[]) => console.log(...a);
 
   const app = express();
@@ -76,7 +100,9 @@ export function createApp(opts: AppOptions = {}): RunningApp {
 
   const httpServer = http.createServer(app);
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-    cors: { origin: true },
+    cors: {
+      origin: (origin, cb) => cb(null, originAllowed(origin, opts.allowedOrigins)),
+    },
   });
 
   const registry = new RoomRegistry();
@@ -237,13 +263,33 @@ export function createApp(opts: AppOptions = {}): RunningApp {
 
   io.on("connection", (socket) => {
     const data: SocketData = {};
+    // Limiters live with the socket, so they vanish when it disconnects.
+    const limiter = {
+      chat: new RateLimiter(LIMITS.chat),
+      reaction: new RateLimiter(LIMITS.reaction),
+      playback: new RateLimiter(LIMITS.playback),
+    };
+
+    /**
+     * Charge an action against its limit. On the first rejection in a window
+     * the sender is told privately — silence would just look like a bug, and
+     * telling them every time would be its own flood.
+     */
+    const withinLimit = (kind: keyof typeof limiter): boolean => {
+      const rl = limiter[kind];
+      if (rl.allow()) return true;
+      if (rl.justExceeded()) {
+        socket.emit("chatMessage", systemMessage("You're doing that too fast — slow down a moment."));
+      }
+      return false;
+    };
 
     const emitSystem = (roomCode: string, text: string) => {
       emitChat(roomCode, systemMessage(text));
     };
 
     socket.on("joinRoom", (payload, ack) => {
-      if (JOIN_SECRET && payload.secret !== JOIN_SECRET) {
+      if (JOIN_SECRET && !secretMatches(JOIN_SECRET, payload.secret)) {
         ack({ ok: false, error: "bad secret", youAreHost: false, members: [] });
         return;
       }
@@ -251,6 +297,12 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       const name = String(payload.name || "guest").slice(0, 40);
       if (!roomCode) {
         ack({ ok: false, error: "missing room code", youAreHost: false, members: [] });
+        return;
+      }
+
+      const existing = registry.get(roomCode);
+      if (existing && existing.members.size >= MAX_ROOM_SIZE) {
+        ack({ ok: false, error: "room is full", youAreHost: false, members: [] });
         return;
       }
 
@@ -316,6 +368,9 @@ export function createApp(opts: AppOptions = {}): RunningApp {
 
     socket.on("playbackEvent", (event) => {
       if (!data.roomCode) return;
+      // A seek storm is the most disruptive thing a member can do, so it is
+      // limited alongside chat rather than trusted.
+      if (!withinLimit("playback")) return;
       const room = registry.get(data.roomCode);
       // A member who is demonstrably on another title must not drive the room:
       // their seeks would drag everyone to a position that means nothing here.
@@ -369,6 +424,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
 
     socket.on("chatMessage", (text) => {
       if (!data.roomCode) return;
+      if (!withinLimit("chat")) return;
       const msg: ChatMessage = {
         id: randomUUID(),
         name: data.name || "guest",
@@ -380,6 +436,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
 
     socket.on("reaction", (emoji) => {
       if (!data.roomCode) return;
+      if (!withinLimit("reaction")) return;
       const clean = String(emoji).slice(0, 8);
       io.to(data.roomCode).emit("reaction", {
         name: data.name || "guest",
