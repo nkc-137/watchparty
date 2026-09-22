@@ -1,4 +1,4 @@
-import { ContentInfo, Member, SyncState } from "./protocol";
+import { ChatMessage, ContentInfo, Member, SyncState } from "./protocol";
 
 export interface RoomMember extends Member {
   /**
@@ -19,6 +19,13 @@ export interface Hold {
   timer: ReturnType<typeof setTimeout> | null;
 }
 
+/**
+ * How much chat a late joiner is caught up with. Enough to read the room and
+ * reply to what was just said, without dumping an hour of backlog on someone
+ * who only wants to watch the film.
+ */
+export const MAX_HISTORY = 50;
+
 export interface Room {
   code: string;
   members: Map<string, RoomMember>; // socketId -> member
@@ -26,6 +33,8 @@ export interface Room {
   lastState: SyncState | null;
   /** Non-null while the room is paused waiting for someone to buffer. */
   hold: Hold | null;
+  /** Recent chat, newest last, capped at MAX_HISTORY. */
+  messages: ChatMessage[];
 }
 
 /**
@@ -45,6 +54,7 @@ export class RoomRegistry {
         hostId: null,
         lastState: null,
         hold: null,
+        messages: [],
       };
       this.rooms.set(roomCode, room);
     }
@@ -78,6 +88,22 @@ export class RoomRegistry {
       hostChanged = true;
     }
     return { room, hostChanged };
+  }
+
+  /**
+   * Append to the room's scrollback, dropping the oldest once it is full.
+   *
+   * Only real chat is kept. Activity notices ("Sam paused", "Alex jumped to
+   * 25:00") are status, not conversation: they are meaningless half an hour
+   * later, and because every seek emits one they would otherwise crowd the
+   * actual talk out of the buffer entirely.
+   */
+  record(room: Room, msg: ChatMessage): void {
+    if (msg.system) return;
+    room.messages.push(msg);
+    if (room.messages.length > MAX_HISTORY) {
+      room.messages.splice(0, room.messages.length - MAX_HISTORY);
+    }
   }
 
   get(roomCode: string): Room | undefined {

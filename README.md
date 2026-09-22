@@ -37,6 +37,7 @@ It has two parts:
 - 🎬 **Synced play / pause / seek** across everyone, with automatic drift correction
 - 💬 **Live chat** with a member list and activity notices ("Alex paused", "Sam jumped to 25:00", joins & leaves)
 - 😂 **Emoji reactions** that float over the video
+- 📜 **Chat catch-up** — join at the 40-minute mark and the last 50 messages are waiting for you, with a marker showing where you came in
 - ⏳ **Buffer gate** — nobody starts until everyone has buffered, and if one person stalls mid-film the room parks and resumes together
 - 🎯 **Wrong-title detection** — if someone opens a different episode, the room says so and ignores their play/pause/seek instead of dragging everyone to a meaningless timestamp
 - 📶 **Latency badge** + one-click **⟳ resync** to snap back to the host
@@ -263,7 +264,7 @@ watchparty/
 │   ├── src/
 │   │   ├── app.ts          # server factory (rooms, relay, activity notices)
 │   │   ├── index.ts        # entry point (reads env, listens)
-│   │   ├── rooms.ts        # in-memory room registry + host election
+│   │   ├── rooms.ts        # room registry, host election, chat scrollback
 │   │   └── protocol.ts     # shared wire types
 │   ├── test/               # automated integration suite (npm test)
 │   └── scripts/            # smoke test + virtual-participant harness
@@ -292,12 +293,12 @@ The server has an integration suite that boots the **real** server on an
 ephemeral port and drives it with **real** Socket.IO clients — covering rooms,
 host election/handoff, play/pause/seek relay, chat, reactions, activity notices,
 the `JOIN_SECRET` gate, drift/`requestSync`, late-joiner state, and
-wrong-title detection, and the buffering holds:
+wrong-title detection, the buffering holds, and chat history:
 
 ```bash
 cd server
 npm install
-npm test            # -> "27/27 passed" then "PASS"
+npm test            # -> "32/32 passed" then "PASS"
 ```
 
 No framework or extra services required — it's a self-contained runner

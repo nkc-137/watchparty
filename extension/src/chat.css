@@ -130,6 +130,26 @@
   opacity: 0.55;
   padding: 1px 0;
 }
+/* "you joined here" rule between replayed history and live chat. */
+.wp-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.45;
+  margin: 2px 0;
+}
+.wp-divider::before,
+.wp-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.4;
+}
+
 .wp-name { font-weight: 700; margin-right: 6px; }
 .wp-time { font-size: 10px; opacity: 0.5; margin-right: 6px; }
 #wp-reactions { display: flex; gap: 4px; padding: 6px 8px 0; }

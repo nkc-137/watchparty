@@ -12,6 +12,7 @@ import assert from "assert";
 import http from "http";
 import { io, Socket } from "socket.io-client";
 import { createApp, RunningApp } from "../src/app";
+import { MAX_HISTORY } from "../src/rooms";
 import {
   ServerToClientEvents,
   ClientToServerEvents,
@@ -587,6 +588,83 @@ test("members carry readiness, and a joiner mid-hold is told about it", async ()
   await join(late, { roomCode: "hold-join", name: "Late" });
   const st = await toldOnJoin;
   assert.deepStrictEqual(st.waiting, ["Slow"]);
+});
+
+
+// ---- chat history -----------------------------------------------------------
+
+/** Send `texts` in order and resolve once the last has come back. */
+async function say(c: Client, texts: string[]) {
+  const last = waitFor(c, "chatMessage", (m: any) => m.text === texts[texts.length - 1]);
+  for (const t of texts) c.emit("chatMessage", t);
+  await last;
+}
+
+test("a late joiner is caught up with the chat they missed", async () => {
+  const early = await connect();
+  await join(early, { roomCode: "hist-basic", name: "Early" });
+  await say(early, ["first", "second", "third"]);
+
+  const late = await connect();
+  const res = await join(late, { roomCode: "hist-basic", name: "Late" });
+
+  assert.deepStrictEqual(
+    res.history?.map((m) => m.text),
+    ["first", "second", "third"],
+    "in the order they were said"
+  );
+  assert.strictEqual(res.history?.[0].name, "Early", "attributed to whoever said it");
+});
+
+test("a fresh room has no history rather than undefined behavior", async () => {
+  const first = await connect();
+  const res = await join(first, { roomCode: "hist-empty", name: "First" });
+  assert.deepStrictEqual(res.history, [], "empty, not missing");
+});
+
+test("history is capped, keeping the most recent messages", async () => {
+  const talker = await connect();
+  await join(talker, { roomCode: "hist-cap", name: "Talker" });
+  await say(talker, Array.from({ length: 60 }, (_, i) => `msg-${i}`));
+
+  const late = await connect();
+  const res = await join(late, { roomCode: "hist-cap", name: "Late" });
+
+  assert.strictEqual(res.history?.length, MAX_HISTORY, "capped at MAX_HISTORY");
+  // The oldest are dropped, not the newest: you want the end of the conversation.
+  assert.strictEqual(res.history?.[0].text, "msg-10");
+  assert.strictEqual(res.history?.[MAX_HISTORY - 1].text, "msg-59");
+});
+
+test("activity notices are not replayed as history", async () => {
+  // "Sam paused" is status, not conversation — stale on arrival, and every
+  // seek emits one, so replaying them would bury the actual chat.
+  const a = await connect();
+  await join(a, { roomCode: "hist-sys", name: "Ann" });
+  const b = await connect();
+  await join(b, { roomCode: "hist-sys", name: "Bob" }); // emits "Bob joined"
+  a.emit("playbackEvent", { action: "pause", position: 10, at: Date.now() });
+  await say(a, ["real message"]);
+
+  const late = await connect();
+  const res = await join(late, { roomCode: "hist-sys", name: "Late" });
+
+  assert.deepStrictEqual(res.history?.map((m) => m.text), ["real message"]);
+  assert.strictEqual(
+    res.history?.some((m) => m.system),
+    false,
+    "no system notices in the backlog"
+  );
+});
+
+test("history does not leak between rooms", async () => {
+  const a = await connect();
+  await join(a, { roomCode: "hist-room-a", name: "Ann" });
+  await say(a, ["secret to room a"]);
+
+  const b = await connect();
+  const res = await join(b, { roomCode: "hist-room-b", name: "Bob" });
+  assert.deepStrictEqual(res.history, [], "a different room starts empty");
 });
 
 // ---- runner -----------------------------------------------------------------

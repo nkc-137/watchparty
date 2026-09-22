@@ -115,6 +115,8 @@ export interface JoinRoomResult {
   error?: string;
   youAreHost: boolean;
   members: Member[];
+  /** Recent chat so a late joiner doesn't land in an empty panel. */
+  history?: ChatMessage[];
   /** Last known state so a late joiner can catch up immediately. */
   state?: SyncState | null;
 }

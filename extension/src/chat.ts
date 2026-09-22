@@ -15,6 +15,8 @@ export interface ChatHandlers {
 
 export interface ChatUI {
   addMessage(msg: ChatMessage): void;
+  /** Render chat that was sent before we joined, above a divider. */
+  addHistory(msgs: ChatMessage[]): void;
   setMembers(members: Member[]): void;
   /** Show a banner above the chat, or clear it with null. */
   setWarning(text: string | null): void;
@@ -165,6 +167,20 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
         unread++;
         refreshLauncher();
       }
+    },
+    addHistory(msgs) {
+      if (!msgs.length) return;
+      for (const msg of msgs) this.addMessage(msg);
+      // Mark where the backlog ends, so it's obvious which lines you missed
+      // and which arrived while you were watching.
+      const rule = document.createElement("div");
+      rule.className = "wp-divider";
+      rule.textContent = "you joined here";
+      messages.appendChild(rule);
+      messages.scrollTop = messages.scrollHeight;
+      // Catching up is not unread mail.
+      unread = 0;
+      refreshLauncher();
     },
     setMembers(members) {
       memberCount = members.length;

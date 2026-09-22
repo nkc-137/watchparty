@@ -90,6 +90,19 @@ export function createApp(opts: AppOptions = {}): RunningApp {
   });
 
   /**
+   * Send a chat line to the room and put it in the scrollback.
+   *
+   * Every chatMessage emission goes through here — the registry decides what
+   * is worth keeping (see RoomRegistry.record), so a new kind of notice can't
+   * accidentally bypass the rule or silently fill the buffer.
+   */
+  const emitChat = (roomCode: string, msg: ChatMessage) => {
+    const room = registry.get(roomCode);
+    if (room) registry.record(room, msg);
+    io.to(roomCode).emit("chatMessage", msg);
+  };
+
+  /**
    * Announce members who have drifted onto a different title than the host
    * (and those who have come back). Announcements are latched per member via
    * `warnedFor`, so a steady mismatch is reported once, not every sample.
@@ -106,15 +119,14 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       if (key === m.warnedFor) continue;
       if (off) {
         const what = m.content?.title ? ` (${m.content.title})` : "";
-        io.to(room.code).emit(
-          "chatMessage",
-          systemMessage(`⚠️ ${m.name} is watching something else${what} — their controls won't move the room`)
+        emitChat(
+          room.code,
+          systemMessage(
+            `⚠️ ${m.name} is watching something else${what} — their controls won't move the room`
+          )
         );
       } else if (m.warnedFor) {
-        io.to(room.code).emit(
-          "chatMessage",
-          systemMessage(`${m.name} is back on the same title`)
-        );
+        emitChat(room.code, systemMessage(`${m.name} is back on the same title`));
       }
       m.warnedFor = key;
     }
@@ -172,10 +184,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
 
     io.to(room.code).emit("hold", { waiting: names, position });
     if (isNew) {
-      io.to(room.code).emit(
-        "chatMessage",
-        systemMessage(`⏳ Waiting for ${listNames(names)} to buffer…`)
-      );
+      emitChat(room.code, systemMessage(`⏳ Waiting for ${listNames(names)} to buffer…`));
     }
     return true;
   };
@@ -196,8 +205,8 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       room.lastState = { ...room.lastState, position, playing: play, at: Date.now() };
     }
     if (!play) return; // a plain pause already speaks for itself in the chat
-    io.to(room.code).emit(
-      "chatMessage",
+    emitChat(
+      room.code,
       systemMessage(
         timedOut
           ? "Gave up waiting — resuming without everyone."
@@ -230,7 +239,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
     const data: SocketData = {};
 
     const emitSystem = (roomCode: string, text: string) => {
-      io.to(roomCode).emit("chatMessage", systemMessage(text));
+      emitChat(roomCode, systemMessage(text));
     };
 
     socket.on("joinRoom", (payload, ack) => {
@@ -251,7 +260,13 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       socket.join(roomCode);
 
       const members = registry.memberList(room);
-      ack({ ok: true, youAreHost: isHost, members, state: room.lastState });
+      ack({
+        ok: true,
+        youAreHost: isHost,
+        members,
+        state: room.lastState,
+        history: [...room.messages],
+      });
       io.to(roomCode).emit("members", members);
       // A joiner arriving mid-hold needs the banner too.
       if (room.hold) {
@@ -360,7 +375,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
         text: String(text).slice(0, 500),
         at: Date.now(),
       };
-      io.to(data.roomCode).emit("chatMessage", msg);
+      emitChat(data.roomCode, msg);
     });
 
     socket.on("reaction", (emoji) => {

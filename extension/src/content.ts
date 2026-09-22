@@ -190,6 +190,8 @@ function connect(cfg: StoredConfig) {
         isHost = res.youAreHost;
         members = res.members;
         ui?.setMembers(members);
+        // Catch up on what was said before we arrived.
+        if (res.history?.length) ui?.addHistory(res.history);
         ui?.setStatus(statusText());
         ui?.setConn("online");
         // Register what we're watching before anything else, so the room can
