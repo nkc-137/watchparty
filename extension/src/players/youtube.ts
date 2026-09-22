@@ -20,6 +20,13 @@ function player(): YTPlayer | null {
   return el && typeof el.getCurrentTime === "function" ? el : null;
 }
 
+/** The 11-character id in ?v=, or a youtu.be / shorts path. */
+export const YOUTUBE_ID_PATTERNS = [
+  /[?&]v=([\w-]{11})/,
+  /youtu\.be\/([\w-]{11})/,
+  /\/shorts\/([\w-]{11})/,
+];
+
 export const youtubeAdapter: PlayerAdapter = {
   name: "youtube",
   available: () => {
@@ -36,11 +43,6 @@ export const youtubeAdapter: PlayerAdapter = {
   play: () => player()?.playVideo(),
   pause: () => player()?.pauseVideo(),
   // The 11-character id in ?v= (or a youtu.be / shorts path).
-  contentId: () =>
-    idFromUrl([
-      /[?&]v=([\w-]{11})/,
-      /youtu\.be\/([\w-]{11})/,
-      /\/shorts\/([\w-]{11})/,
-    ]),
+  contentId: () => idFromUrl(YOUTUBE_ID_PATTERNS),
   title: cleanTitle,
 };

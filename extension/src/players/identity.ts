@@ -17,9 +17,12 @@ const TITLE_SUFFIXES =
 /** Leading unread/notification counters YouTube puts in the tab title: "(3) ". */
 const TITLE_PREFIX = /^\(\d+\)\s*/;
 
-/** A human-readable title for the overlay. Display only. */
-export function cleanTitle(): string | null {
-  const t = document.title.replace(TITLE_PREFIX, "").replace(TITLE_SUFFIXES, "").trim();
+/**
+ * A human-readable title for the overlay. Display only.
+ * Takes the raw title so it can be exercised without a document.
+ */
+export function cleanTitle(raw: string = document.title): string | null {
+  const t = raw.replace(TITLE_PREFIX, "").replace(TITLE_SUFFIXES, "").trim();
   return t || null;
 }
 

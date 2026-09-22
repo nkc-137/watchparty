@@ -7,6 +7,13 @@
 import { htmlVideoAdapter } from "./htmlVideo";
 import { idFromUrl } from "./identity";
 
+/** ASIN/GTI from the detail URL. */
+export const PRIME_ID_PATTERNS = [
+  /[?&]gti=([A-Za-z0-9.]+)/,
+  /\/detail\/([A-Za-z0-9]{8,})/,
+  /\/gp\/video\/detail\/([A-Za-z0-9]{8,})/,
+];
+
 export const primeAdapter = htmlVideoAdapter({
   name: "prime",
   minSeekIntervalMs: 1500,
@@ -14,10 +21,5 @@ export const primeAdapter = htmlVideoAdapter({
   // Prime identifies a title by an ASIN/GTI in the detail URL. Note this is
   // series-level for episodic content, so it catches "wrong show" but not
   // always "wrong episode".
-  contentId: () =>
-    idFromUrl([
-      /[?&]gti=([A-Za-z0-9.]+)/,
-      /\/detail\/([A-Za-z0-9]{8,})/,
-      /\/gp\/video\/detail\/([A-Za-z0-9]{8,})/,
-    ]),
+  contentId: () => idFromUrl(PRIME_ID_PATTERNS),
 });

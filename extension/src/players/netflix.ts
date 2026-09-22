@@ -30,6 +30,9 @@ function getPlayer(): NetflixPlayer | null {
   }
 }
 
+/** Fallback id source: the /watch/<id> URL. */
+export const NETFLIX_ID_PATTERNS = [/netflix\.com\/watch\/(\d+)/];
+
 export const netflixAdapter: PlayerAdapter = {
   name: "netflix",
   available: () => getPlayer() !== null,
@@ -56,7 +59,7 @@ export const netflixAdapter: PlayerAdapter = {
     } catch {
       /* fall through to the URL */
     }
-    return idFromUrl([/netflix\.com\/watch\/(\d+)/]);
+    return idFromUrl(NETFLIX_ID_PATTERNS);
   },
   title: cleanTitle,
 };

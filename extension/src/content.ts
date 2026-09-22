@@ -12,13 +12,20 @@ import {
   ClientToServerEvents,
   ServerToClientEvents,
   JoinRoomResult,
-  SyncState,
   StoredConfig,
   ContentInfo,
   Member,
   contentConflicts,
 } from "./protocol";
 import { mountChat, ChatUI } from "./chat";
+import {
+  connSig,
+  driftToleranceFor,
+  isWatchPage,
+  planSync,
+  projected,
+  sameContent,
+} from "./sync";
 
 type WPSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -26,11 +33,7 @@ let socket: WPSocket | null = null;
 let ui: ChatUI | null = null;
 let isHost = false;
 
-// How far out of sync a follower tolerates before correcting. Fragile HTML5
-// players (Prime, Tubi) prefer a looser threshold so we don't seek (and
-// re-buffer) constantly.
-const IS_FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com|pluto\.tv/.test(location.hostname);
-const DRIFT_TOLERANCE_SEC = IS_FRAGILE_HTML5 ? 2.5 : 1;
+const DRIFT_TOLERANCE_SEC = driftToleranceFor(location.hostname);
 
 // Latest known local player state (fed by the page's periodic samples).
 let local: { position: number; playing: boolean; content: ContentInfo | null } = {
@@ -66,11 +69,6 @@ function hostContent(): ContentInfo | null {
  */
 function offTitle(): boolean {
   return contentConflicts(local.content, hostContent());
-}
-
-function sameContent(a: ContentInfo | null, b: ContentInfo | null): boolean {
-  if (!a || !b) return a === b;
-  return a.site === b.site && a.id === b.id && a.title === b.title;
 }
 
 /** Tell the server what we're watching whenever it changes. */
@@ -150,12 +148,6 @@ function apply(action: "play" | "pause" | "seek", position: number) {
   toPage({ ns: NS, dir: "toPage", kind: "apply", action, position });
 }
 
-/** Where the source should be *now*, compensating for network latency. */
-function projected(state: SyncState): number {
-  const elapsed = state.playing ? (Date.now() - state.at) / 1000 : 0;
-  return state.position + elapsed;
-}
-
 // --- Connection --------------------------------------------------------------
 function statusText(): string {
   if (!socket?.connected) return "offline";
@@ -227,10 +219,9 @@ function connect(cfg: StoredConfig) {
   s.on("syncState", (state) => {
     if (isHost) return; // host is the authority; ignore its own echoes
     if (contentConflicts(state.content, local.content)) return;
-    const target = projected(state);
-    const drift = Math.abs(local.position - target);
-    if (drift > DRIFT_TOLERANCE_SEC) apply("seek", target);
-    if (state.playing !== local.playing) apply(state.playing ? "play" : "pause", target);
+    const plan = planSync(local, state, DRIFT_TOLERANCE_SEC);
+    if (plan.seek) apply("seek", plan.position);
+    if (plan.setPlaying !== null) apply(plan.setPlaying ? "play" : "pause", plan.position);
   });
 
   s.on("members", (list) => {
@@ -327,29 +318,10 @@ setInterval(() => {
 // URL or the stored config changes — so no manual reload is needed.
 let cfgCache: StoredConfig | null = null;
 
-/**
- * Whether a playable content page is open. Site-specific because the sites
- * differ: Netflix uses a /watch/ URL; Prime opens its player in-place (the URL
- * often doesn't change), so we detect a real content <video> in the DOM.
- */
+/** Gather the DOM inputs isWatchPage() needs. */
 function onWatchPage(): boolean {
-  const host = location.hostname;
-  if (host.includes("netflix.com")) return /\/watch\//.test(location.pathname);
-  if (host.includes("youtube.com")) return location.pathname === "/watch";
-  if (
-    host.includes("primevideo.com") ||
-    host.includes("amazon.") ||
-    host.includes("tubitv.com") ||
-    host.includes("pluto.tv")
-  ) {
-    // These sites have several <video> elements (the first often has no
-    // duration); treat the page as "playing" if ANY video has a real content
-    // duration.
-    return Array.from(document.querySelectorAll("video")).some(
-      (v) => isFinite(v.duration) && v.duration > 60
-    );
-  }
-  return false;
+  const durations = Array.from(document.querySelectorAll("video")).map((v) => v.duration);
+  return isWatchPage(location.hostname, location.pathname, durations);
 }
 
 function shouldConnect(): boolean {
@@ -360,11 +332,6 @@ function shouldConnect(): boolean {
 function applyPanelVisibility() {
   const root = document.getElementById("wp-root");
   if (root) root.style.display = cfgCache?.showPanel === false ? "none" : "";
-}
-
-/** Connection-relevant config signature (excludes the display-only toggle). */
-function connSig(c: StoredConfig | null): string {
-  return c ? [c.connected, c.serverUrl, c.roomCode, c.name, c.secret].join("|") : "";
 }
 
 /** Bring actual state in line with desired state. */

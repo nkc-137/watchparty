@@ -24,7 +24,7 @@ jobs:
       - run: npm test
 
   extension:
-    name: Extension (typecheck + build)
+    name: Extension (typecheck + unit tests + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -38,4 +38,5 @@ jobs:
           cache-dependency-path: extension/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: npm test
       - run: npm run build

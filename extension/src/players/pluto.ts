@@ -10,15 +10,17 @@
 import { htmlVideoAdapter } from "./htmlVideo";
 import { idFromUrl } from "./identity";
 
+/** Episode id when there is one, so a series lands episode-level. */
+export const PLUTO_ID_PATTERNS = [
+  /\/on-demand\/series\/[^/]+\/season\/\d+\/episode\/([^/?#]+)/,
+  /\/on-demand\/(?:movies|series)\/([^/?#]+)/,
+  /\/live-tv\/([^/?#]+)/,
+];
+
 export const plutoAdapter = htmlVideoAdapter({
   name: "pluto",
   minSeekIntervalMs: 1500,
   playPauseDriftSec: 2.5,
   // Prefer the episode id when there is one, so a series lands episode-level.
-  contentId: () =>
-    idFromUrl([
-      /\/on-demand\/series\/[^/]+\/season\/\d+\/episode\/([^/?#]+)/,
-      /\/on-demand\/(?:movies|series)\/([^/?#]+)/,
-      /\/live-tv\/([^/?#]+)/,
-    ]),
+  contentId: () => idFromUrl(PLUTO_ID_PATTERNS),
 });

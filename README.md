@@ -273,7 +273,9 @@ watchparty/
 │   │   ├── content.ts      # ISOLATED-world socket + reconcile logic
 │   │   ├── chat.ts         # collapsible overlay / dashboard
 │   │   ├── popup.ts        # config, invites, show/hide toggle
+│   │   ├── sync.ts         # pure sync math + page/config predicates
 │   │   └── players/        # per-site adapters
+│   ├── test/               # unit tests for the pure logic (npm test)
 │   ├── icons/              # generated app icons
 │   └── PUBLISHING.md · PRIVACY.md
 ├── DEPLOY.md               # host it on the old PC
@@ -307,9 +309,25 @@ There's also a quick two-client smoke script:
 npm run test:client   # start the server first (npm start), then run this
 ```
 
+### Extension unit tests
+
+The decisions underneath the browser-side code — where the host really is,
+whether to correct drift, what page we're on, which title is playing — are pure
+functions in `src/sync.ts` and `src/players/`, so they run in plain Node with no
+browser, framework or DOM shim (esbuild bundles them; see `test/run.mjs`):
+
+```bash
+cd extension
+npm install
+npm test            # -> "20/20 passed" then "PASS"
+```
+
+One of them imports **both** copies of `protocol.ts` and asserts they agree, so
+the hand-duplicated wire protocol can't silently drift apart.
+
 ### Manual end-to-end checklist
 
-The extension's browser/DOM side is verified by driving a real browser:
+The socket, overlay and player bridge still need a real browser:
 
 - **Player control:** with the extension loaded on a title, the overlay reaches
   "connected"; pausing in one browser pauses another within ~1s.
