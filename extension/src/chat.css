@@ -96,6 +96,17 @@
   padding: 6px 10px; font-size: 11px; opacity: 0.8;
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
+/* Off-title warning banner. Amber, not red: sync is degraded, not broken. */
+#wp-warn {
+  display: none;
+  padding: 7px 10px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #ffe9b0;
+  background: rgba(245, 196, 81, 0.16);
+  border-bottom: 1px solid rgba(245, 196, 81, 0.35);
+}
+
 #wp-messages {
   flex: 1; overflow-y: auto; padding: 8px 10px;
   display: flex; flex-direction: column; gap: 6px;

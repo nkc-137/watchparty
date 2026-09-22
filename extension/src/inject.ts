@@ -9,9 +9,16 @@
  * All site-specific player access lives in ./players/* — this file is generic.
  */
 import { NS, FromPage, ToPage, ApplyMsg } from "./bridge";
+import { ContentInfo } from "./protocol";
 import { selectAdapter, PlayerAdapter } from "./players";
 
 const adapter: PlayerAdapter | null = selectAdapter();
+
+/** What this tab is playing, re-read each sample so SPA navigation is picked up. */
+function readContent(): ContentInfo | null {
+  if (!adapter) return null;
+  return { site: adapter.name, id: adapter.contentId(), title: adapter.title() };
+}
 
 function post(msg: FromPage) {
   window.postMessage(msg, "*");
@@ -100,7 +107,7 @@ function sample() {
 
   const time = adapter.getTime(); // seconds
   const paused = adapter.isPaused();
-  const vid = adapter.videoId();
+  const content = readContent();
   const now = Date.now();
   const suppressed = now < suppressUntil;
 
@@ -109,7 +116,7 @@ function sample() {
   const drift = Math.abs(time - lastTime);
   const expected = paused ? 0 : 0.8;
   if (!suppressed && lastPaused !== null && drift > 1.5 + expected) {
-    post({ ns: NS, dir: "fromPage", kind: "playback", action: "seek", position: time, videoId: vid });
+    post({ ns: NS, dir: "fromPage", kind: "playback", action: "seek", position: time, content });
   }
 
   // Detect play/pause transitions.
@@ -120,12 +127,12 @@ function sample() {
       kind: "playback",
       action: paused ? "pause" : "play",
       position: time,
-      videoId: vid,
+      content,
     });
   }
 
   // Periodic state sample (content script decides whether to broadcast as host).
-  post({ ns: NS, dir: "fromPage", kind: "state", position: time, playing: !paused, videoId: vid });
+  post({ ns: NS, dir: "fromPage", kind: "state", position: time, playing: !paused, content });
 
   lastPaused = paused;
   lastTime = time;

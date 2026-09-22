@@ -3,6 +3,7 @@
  * if Netflix changes their internals, fix it here.
  */
 import { PlayerAdapter } from "./types";
+import { cleanTitle, idFromUrl } from "./identity";
 
 // Netflix's globals are untyped; keep the surface tiny and defensive.
 declare const netflix: any;
@@ -39,14 +40,19 @@ export const netflixAdapter: PlayerAdapter = {
   seek: (s) => getPlayer()?.seek(Math.round(s * 1000)),
   play: () => getPlayer()?.play(),
   pause: () => getPlayer()?.pause(),
-  videoId: () => {
+  // Netflix ids are per-episode, so this catches "you opened episode 2".
+  // The player session id is authoritative; the URL is the fallback for the
+  // moment before the session exists.
+  contentId: () => {
     try {
       const vp = netflix?.appContext?.state?.playerApp?.getAPI?.()?.videoPlayer;
       const ids = vp?.getAllPlayerSessionIds?.() || [];
       const m = /watch-(\d+)/.exec(ids[0] || "");
-      return m ? Number(m[1]) : null;
+      if (m) return m[1];
     } catch {
-      return null;
+      /* fall through to the URL */
     }
+    return idFromUrl([/netflix\.com\/watch\/(\d+)/]);
   },
+  title: cleanTitle,
 };

@@ -4,6 +4,7 @@
  * than raw <video> seeking — comparable to Netflix — so no special tuning.
  */
 import { PlayerAdapter } from "./types";
+import { cleanTitle, idFromUrl } from "./identity";
 
 interface YTPlayer {
   getCurrentTime(): number; // seconds
@@ -31,6 +32,12 @@ export const youtubeAdapter: PlayerAdapter = {
   seek: (s) => player()?.seekTo(s, true),
   play: () => player()?.playVideo(),
   pause: () => player()?.pauseVideo(),
-  // YouTube video ids are alphanumeric; videoId is a numeric sanity check only.
-  videoId: () => null,
+  // The 11-character id in ?v= (or a youtu.be / shorts path).
+  contentId: () =>
+    idFromUrl([
+      /[?&]v=([\w-]{11})/,
+      /youtu\.be\/([\w-]{11})/,
+      /\/shorts\/([\w-]{11})/,
+    ]),
+  title: cleanTitle,
 };

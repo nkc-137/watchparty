@@ -24,8 +24,17 @@ export interface PlayerAdapter {
   play(): void;
   pause(): void;
 
-  /** Best-effort content id for sanity checks; null if unknown. */
-  videoId(): number | null;
+  /**
+   * Stable id for the title currently playing, unique within this site
+   * (episode-level where the site allows it). Used to detect that someone
+   * opened the wrong thing, so it must NOT be derived from a display title —
+   * those are localized and differ per account. Return null when unknown;
+   * unknown is treated as "can't tell", never as a mismatch.
+   */
+  contentId(): string | null;
+
+  /** Human-readable title for the overlay. Display only; null if unknown. */
+  title(): string | null;
 
   // --- Optional robustness tuning (defaults keep Netflix's original behavior) ---
 

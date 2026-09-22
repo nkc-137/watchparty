@@ -37,6 +37,7 @@ It has two parts:
 - 🎬 **Synced play / pause / seek** across everyone, with automatic drift correction
 - 💬 **Live chat** with a member list and activity notices ("Alex paused", "Sam jumped to 25:00", joins & leaves)
 - 😂 **Emoji reactions** that float over the video
+- 🎯 **Wrong-title detection** — if someone opens a different episode, the room says so and ignores their play/pause/seek instead of dragging everyone to a meaningless timestamp
 - 📶 **Latency badge** + one-click **⟳ resync** to snap back to the host
 - 🫥 **Collapsible, translucent overlay** — or hide it entirely and keep syncing
 - 🔗 **One-click invites** — a token bundles the server URL, room, and secret
@@ -226,11 +227,21 @@ flowchart TB
 ```
 
 - **`players/`** — one adapter per site behind a common interface
-  (`players/types.ts`). `netflix.ts` uses Netflix's private player API,
+  (`players/types.ts`). Each adapter reports a `contentId()` (what is playing)
+  and a `title()` (what to show), which is how the room tells "we're watching
+  the same thing" from "you opened episode 2". `netflix.ts` uses Netflix's private player API,
   `prime.ts`, `tubi.ts`, and `pluto.ts` drive the standard HTML5 `<video>` (via a
   shared `htmlVideo.ts` helper), and `youtube.ts` uses YouTube's `#movie_player`
   API. Add a service by writing a new
   adapter and registering it in `players/index.ts` — nothing else changes.
+- **Content identity:** `contentId()` must come from the URL or the site's
+  player API, never from a display title — titles are localized, so comparing
+  them would falsely flag friends in other regions. Ids are only compared
+  *within* one site (the same film on Netflix and Prime is a legitimate party),
+  and an unknown id on either side means "can't tell", never "mismatch". A
+  member whose id conflicts with the host's is dropped by the server and
+  ignored by every client, and the overlay explains why. See
+  `contentConflicts()` in `protocol.ts` — the one place the rule lives.
 - **Robustness tuning:** Netflix's `seek()` buffers gracefully; Prime's raw
   HTML5 seek is fragile, so its adapter rate-limits/coalesces seeks and avoids
   re-seeking on a plain pause (`minSeekIntervalMs`, `playPauseDriftSec`). Netflix
@@ -270,12 +281,13 @@ watchparty/
 The server has an integration suite that boots the **real** server on an
 ephemeral port and drives it with **real** Socket.IO clients — covering rooms,
 host election/handoff, play/pause/seek relay, chat, reactions, activity notices,
-the `JOIN_SECRET` gate, drift/`requestSync`, and late-joiner state:
+the `JOIN_SECRET` gate, drift/`requestSync`, late-joiner state, and
+wrong-title detection:
 
 ```bash
 cd server
 npm install
-npm test            # -> "12/12 passed" then "PASS"
+npm test            # -> "18/18 passed" then "PASS"
 ```
 
 No framework or extra services required — it's a self-contained runner

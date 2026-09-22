@@ -9,6 +9,7 @@
  * playPauseDriftSec).
  */
 import { PlayerAdapter } from "./types";
+import { cleanTitle } from "./identity";
 
 function contentVideo(): HTMLVideoElement | null {
   const vids = Array.from(document.querySelectorAll("video")) as HTMLVideoElement[];
@@ -34,6 +35,12 @@ export interface HtmlVideoTuning {
   name: string;
   minSeekIntervalMs?: number;
   playPauseDriftSec?: number;
+  /**
+   * Reads the site's content id (see PlayerAdapter.contentId). Omit it and the
+   * adapter reports null, which disables mismatch detection for that site
+   * rather than risking a false alarm.
+   */
+  contentId?: () => string | null;
 }
 
 export function htmlVideoAdapter(t: HtmlVideoTuning): PlayerAdapter {
@@ -56,6 +63,7 @@ export function htmlVideoAdapter(t: HtmlVideoTuning): PlayerAdapter {
       void contentVideo()?.play();
     },
     pause: () => contentVideo()?.pause(),
-    videoId: () => null,
+    contentId: () => t.contentId?.() ?? null,
+    title: cleanTitle,
   };
 }

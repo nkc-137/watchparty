@@ -1,6 +1,13 @@
-import { Member, SyncState } from "./protocol";
+import { ContentInfo, Member, SyncState } from "./protocol";
 
-interface RoomMember extends Member {}
+interface RoomMember extends Member {
+  /**
+   * The content id we last warned the room about for this member, so a
+   * mismatch is announced once rather than on every state sample. null when
+   * they are in step with the host.
+   */
+  warnedFor?: string | null;
+}
 
 export interface Room {
   code: string;
@@ -56,7 +63,19 @@ export class RoomRegistry {
     return this.rooms.get(roomCode);
   }
 
+  /** Wire-safe view of the members (drops server-only bookkeeping). */
   memberList(room: Room): Member[] {
-    return [...room.members.values()];
+    return [...room.members.values()].map(({ id, name, isHost, content }) => ({
+      id,
+      name,
+      isHost,
+      content: content ?? null,
+    }));
+  }
+
+  /** The host's content, which is the reference everyone else is compared to. */
+  hostContent(room: Room): ContentInfo | null {
+    const host = room.hostId ? room.members.get(room.hostId) : null;
+    return host?.content ?? null;
   }
 }

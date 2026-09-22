@@ -14,6 +14,9 @@ import {
   JoinRoomResult,
   SyncState,
   StoredConfig,
+  ContentInfo,
+  Member,
+  contentConflicts,
 } from "./protocol";
 import { mountChat, ChatUI } from "./chat";
 
@@ -30,11 +33,65 @@ const IS_FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com|pluto\.tv/.test(l
 const DRIFT_TOLERANCE_SEC = IS_FRAGILE_HTML5 ? 2.5 : 1;
 
 // Latest known local player state (fed by the page's periodic samples).
-let local: { position: number; playing: boolean; videoId: number | null } = {
+let local: { position: number; playing: boolean; content: ContentInfo | null } = {
   position: 0,
   playing: false,
-  videoId: null,
+  content: null,
 };
+
+// Latest member list, kept so we can tell what the host is watching.
+let members: Member[] = [];
+
+/** The host's content — the reference every mismatch is measured against. */
+function hostContent(): ContentInfo | null {
+  return members.find((m) => m.isHost)?.content ?? null;
+}
+
+/**
+ * True when this tab is demonstrably on a different title than the host, in
+ * which case we neither send nor apply playback events: our positions refer to
+ * different videos, so acting on them would only scramble both sides.
+ */
+function offTitle(): boolean {
+  return contentConflicts(local.content, hostContent());
+}
+
+function sameContent(a: ContentInfo | null, b: ContentInfo | null): boolean {
+  if (!a || !b) return a === b;
+  return a.site === b.site && a.id === b.id && a.title === b.title;
+}
+
+/** Tell the server what we're watching whenever it changes. */
+function publishContent(next: ContentInfo | null) {
+  if (sameContent(local.content, next)) return;
+  local.content = next;
+  if (next && socket?.connected) socket.emit("setContent", next);
+  refreshWarning();
+}
+
+/** Turn the member list into the one-line banner shown above the chat. */
+function refreshWarning() {
+  if (!ui) return;
+  const host = members.find((m) => m.isHost);
+  if (offTitle()) {
+    const mine = local.content?.title;
+    const theirs = host?.content?.title;
+    ui.setWarning(
+      `⚠️ You're watching ${mine ? `“${mine}”` : "a different title"}${
+        theirs ? ` — the room is on “${theirs}”` : " — not what the room is on"
+      }. Sync is paused until you open the same one.`
+    );
+    return;
+  }
+  const strays = members
+    .filter((m) => !m.isHost && contentConflicts(m.content, hostContent()))
+    .map((m) => m.name);
+  ui.setWarning(
+    strays.length
+      ? `⚠️ ${strays.join(", ")} ${strays.length > 1 ? "are" : "is"} on a different title — not synced.`
+      : null
+  );
+}
 
 // When we apply a remote command we briefly ignore our own resulting local
 // events. The page also self-suppresses; this is belt-and-suspenders.
@@ -55,17 +112,21 @@ window.addEventListener("message", (ev) => {
     return;
   }
   if (data.kind === "state") {
-    local = { position: data.position, playing: data.playing, videoId: data.videoId };
+    local.position = data.position;
+    local.playing = data.playing;
+    publishContent(data.content);
     return;
   }
   if (data.kind === "playback") {
     if (Date.now() < applyingUntil) return; // don't echo applied commands
     local.position = data.position;
+    // Don't drag the room around from a different title.
+    if (offTitle()) return;
     socket?.emit("playbackEvent", {
       action: data.action,
       position: data.position,
       at: Date.now(),
-      videoId: data.videoId,
+      content: data.content,
     });
   }
 });
@@ -121,11 +182,19 @@ function connect(cfg: StoredConfig) {
           return;
         }
         isHost = res.youAreHost;
-        ui?.setMembers(res.members);
+        members = res.members;
+        ui?.setMembers(members);
         ui?.setStatus(statusText());
         ui?.setConn("online");
-        // Catch a late joiner up to the room's current position.
-        if (res.state) apply(res.state.playing ? "play" : "pause", projected(res.state));
+        // Register what we're watching before anything else, so the room can
+        // flag a mismatch immediately rather than after the first seek.
+        if (local.content) s.emit("setContent", local.content);
+        refreshWarning();
+        // Catch a late joiner up to the room's current position — but only if
+        // that position refers to the same title we have open.
+        if (res.state && !contentConflicts(res.state.content, local.content)) {
+          apply(res.state.playing ? "play" : "pause", projected(res.state));
+        }
       }
     );
   });
@@ -135,25 +204,33 @@ function connect(cfg: StoredConfig) {
     ui?.setConn("reconnecting");
   });
 
-  s.on("playbackEvent", (e) => apply(e.action, e.position));
+  s.on("playbackEvent", (e) => {
+    // A position from a different title is meaningless here — drop it.
+    if (contentConflicts(e.content, local.content)) return;
+    apply(e.action, e.position);
+  });
 
   s.on("syncState", (state) => {
     if (isHost) return; // host is the authority; ignore its own echoes
+    if (contentConflicts(state.content, local.content)) return;
     const target = projected(state);
     const drift = Math.abs(local.position - target);
     if (drift > DRIFT_TOLERANCE_SEC) apply("seek", target);
     if (state.playing !== local.playing) apply(state.playing ? "play" : "pause", target);
   });
 
-  s.on("members", (members) => {
+  s.on("members", (list) => {
+    members = list;
     isHost = members.find((m) => m.id === s.id)?.isHost ?? isHost;
     ui?.setMembers(members);
     ui?.setStatus(statusText());
+    refreshWarning();
   });
 
   s.on("hostChanged", (hostId) => {
     isHost = hostId === s.id;
     ui?.setStatus(statusText());
+    refreshWarning();
   });
 
   s.on("chatMessage", (msg) => ui?.addMessage(msg));
@@ -171,7 +248,7 @@ function connect(cfg: StoredConfig) {
       position: local.position,
       playing: local.playing,
       at: Date.now(),
-      videoId: local.videoId,
+      content: local.content,
     });
   });
 }
@@ -189,6 +266,7 @@ function disconnect() {
 /** Full teardown: drop the socket AND remove the overlay from the page. */
 function teardown() {
   disconnect();
+  members = [];
   document.getElementById("wp-root")?.remove();
   ui = null;
 }
@@ -200,7 +278,7 @@ setInterval(() => {
     position: local.position,
     playing: local.playing,
     at: Date.now(),
-    videoId: local.videoId,
+    content: local.content,
   });
 }, 3000);
 

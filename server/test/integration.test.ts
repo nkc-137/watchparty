@@ -12,7 +12,12 @@ import assert from "assert";
 import http from "http";
 import { io, Socket } from "socket.io-client";
 import { createApp, RunningApp } from "../src/app";
-import { ServerToClientEvents, ClientToServerEvents, JoinRoomResult } from "../src/protocol";
+import {
+  ServerToClientEvents,
+  ClientToServerEvents,
+  JoinRoomResult,
+  contentConflicts,
+} from "../src/protocol";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -282,6 +287,115 @@ test("JOIN_SECRET gate: rejects wrong secret, accepts correct", async () => {
   bad.disconnect();
   good.disconnect();
   await secured.close();
+});
+
+
+// ---- content identity -------------------------------------------------------
+
+test("contentConflicts only fires when we can actually tell titles apart", async () => {
+  const nf = (id: string | null) => ({ site: "netflix", id, title: "T" });
+
+  assert.strictEqual(contentConflicts(nf("1"), nf("2")), true, "same site, different id");
+  assert.strictEqual(contentConflicts(nf("1"), nf("1")), false, "same title");
+  // An unknown id on either side means "can't tell", never a mismatch.
+  assert.strictEqual(contentConflicts(nf(null), nf("2")), false, "unknown id");
+  assert.strictEqual(contentConflicts(nf("1"), nf(null)), false, "unknown id (other side)");
+  assert.strictEqual(contentConflicts(null, nf("1")), false, "no content at all");
+  // Different services are never compared: the same film legitimately has
+  // unrelated ids on Netflix and Prime.
+  assert.strictEqual(
+    contentConflicts(nf("1"), { site: "prime", id: "B00ABCDEFG", title: "T" }),
+    false,
+    "cross-site"
+  );
+});
+
+test("members list carries each member's content", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "content-members", name: "Host" });
+  host.emit("setContent", { site: "netflix", id: "81001", title: "Arrival" });
+
+  const guest = await connect();
+  const updated = waitFor(guest, "members", (ms: any[]) =>
+    ms.some((m) => m.content?.id === "81001")
+  );
+  await join(guest, { roomCode: "content-members", name: "Guest" });
+  const ms = await updated;
+
+  const h = ms.find((m: any) => m.isHost);
+  assert.strictEqual(h.content.site, "netflix");
+  assert.strictEqual(h.content.title, "Arrival");
+});
+
+test("a member on another title cannot drive the room", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "content-block", name: "Host" });
+  host.emit("setContent", { site: "netflix", id: "81001", title: "Arrival" });
+
+  const stray = await connect();
+  await join(stray, { roomCode: "content-block", name: "Stray" });
+  stray.emit("setContent", { site: "netflix", id: "81002", title: "Some Sequel" });
+
+  // Their seek refers to a different video, so the host must never see it.
+  const quiet = expectNo(host, "playbackEvent");
+  stray.emit("playbackEvent", { action: "seek", position: 1200, at: Date.now() });
+  await quiet;
+});
+
+test("a member on the same title still drives the room", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "content-allow", name: "Host" });
+  host.emit("setContent", { site: "netflix", id: "81001", title: "Arrival" });
+
+  const friend = await connect();
+  await join(friend, { roomCode: "content-allow", name: "Friend" });
+  friend.emit("setContent", { site: "netflix", id: "81001", title: "Arrival" });
+
+  const relayed = waitFor(host, "playbackEvent");
+  friend.emit("playbackEvent", { action: "seek", position: 1200, at: Date.now() });
+  const e = await relayed;
+  assert.strictEqual(e.position, 1200);
+});
+
+test("an unreadable content id never blocks anyone", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "content-unknown", name: "Host" });
+  host.emit("setContent", { site: "prime", id: null, title: null });
+
+  const friend = await connect();
+  await join(friend, { roomCode: "content-unknown", name: "Friend" });
+  friend.emit("setContent", { site: "prime", id: null, title: null });
+
+  const relayed = waitFor(host, "playbackEvent");
+  friend.emit("playbackEvent", { action: "play", position: 42, at: Date.now() });
+  const e = await relayed;
+  assert.strictEqual(e.position, 42);
+});
+
+test("the room is told once when someone drifts off-title, and once when they return", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "content-notice", name: "Host" });
+  host.emit("setContent", { site: "netflix", id: "81001", title: "Arrival" });
+
+  const stray = await connect();
+  await join(stray, { roomCode: "content-notice", name: "Stray" });
+
+  const warned = waitFor(host, "chatMessage", (m: any) =>
+    m.system && m.text.includes("Stray") && m.text.includes("watching something else")
+  );
+  stray.emit("setContent", { site: "netflix", id: "81002", title: "Some Sequel" });
+  await warned;
+
+  // A steady mismatch is latched: repeating the same content says nothing more.
+  const quiet = expectNo(host, "chatMessage");
+  stray.emit("setContent", { site: "netflix", id: "81002", title: "Some Sequel" });
+  await quiet;
+
+  const recovered = waitFor(host, "chatMessage", (m: any) =>
+    m.system && m.text.includes("back on the same title")
+  );
+  stray.emit("setContent", { site: "netflix", id: "81001", title: "Arrival" });
+  await recovered;
 });
 
 // ---- runner -----------------------------------------------------------------

@@ -5,6 +5,39 @@
 
 export type PlaybackAction = "play" | "pause" | "seek";
 
+/**
+ * What a member is currently watching. Used to catch the classic movie-night
+ * failure: one person opens the wrong episode and then drags everyone else
+ * around with their seeks.
+ */
+export interface ContentInfo {
+  /** Adapter/site name, e.g. "netflix", "prime". */
+  site: string;
+  /** Stable per-title id within that site. null when the site can't be read. */
+  id: string | null;
+  /** Human-readable title. Display only — never used to decide a mismatch. */
+  title: string | null;
+}
+
+/**
+ * Whether two members are demonstrably watching different things.
+ *
+ * Deliberately conservative — it only returns true when we are *sure*:
+ *  - different sites are never compared (the same film on Netflix and Prime is
+ *    a legitimate party, and their ids are unrelated anyway),
+ *  - an unknown id on either side means "can't tell", not "mismatch",
+ * so the warning never fires on a room that is actually in sync.
+ */
+export function contentConflicts(
+  a: ContentInfo | null | undefined,
+  b: ContentInfo | null | undefined
+): boolean {
+  if (!a || !b) return false;
+  if (a.site !== b.site) return false;
+  if (!a.id || !b.id) return false;
+  return a.id !== b.id;
+}
+
 /** A single playback control event originating from a member's player. */
 export interface PlaybackEvent {
   action: PlaybackAction;
@@ -12,8 +45,8 @@ export interface PlaybackEvent {
   position: number;
   /** Sender clock time (Date.now()) — used for latency/drift compensation. */
   at: number;
-  /** Netflix video id the sender is watching, for sanity checks. */
-  videoId?: number | null;
+  /** What the sender is watching, so receivers can reject cross-title events. */
+  content?: ContentInfo | null;
 }
 
 /** Periodic authoritative state broadcast by the host for drift correction. */
@@ -21,7 +54,7 @@ export interface SyncState {
   position: number;
   playing: boolean;
   at: number;
-  videoId?: number | null;
+  content?: ContentInfo | null;
 }
 
 export interface ChatMessage {
@@ -38,6 +71,8 @@ export interface Member {
   id: string;
   name: string;
   isHost: boolean;
+  /** Last reported content, so the overlay can flag who is off-title. */
+  content?: ContentInfo | null;
 }
 
 export interface JoinRoomPayload {
@@ -71,6 +106,8 @@ export interface ClientToServerEvents {
   ping: (ack: (serverTime: number) => void) => void;
   /** Ask the host to re-broadcast its authoritative state right now. */
   requestSync: () => void;
+  /** Report what this member is watching; re-sent whenever it changes. */
+  setContent: (info: ContentInfo) => void;
 }
 
 export interface Reaction {

@@ -5,7 +5,7 @@
  * blocks the video; clicking it expands the full panel (members, chat,
  * reactions). Pure DOM; no framework. Styling lives in chat.css.
  */
-import { ChatMessage, Member, Reaction } from "./protocol";
+import { ChatMessage, Member, Reaction, contentConflicts } from "./protocol";
 
 export interface ChatHandlers {
   onSend(text: string): void;
@@ -16,6 +16,8 @@ export interface ChatHandlers {
 export interface ChatUI {
   addMessage(msg: ChatMessage): void;
   setMembers(members: Member[]): void;
+  /** Show a banner above the chat, or clear it with null. */
+  setWarning(text: string | null): void;
   setStatus(text: string): void;
   setLatency(ms: number | null): void;
   setConn(state: ConnState): void;
@@ -48,6 +50,7 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
         <button id="wp-collapse" title="Collapse">–</button>
       </div>
       <div id="wp-members"></div>
+      <div id="wp-warn"></div>
       <div id="wp-messages"></div>
       <div id="wp-reactions"></div>
       <form id="wp-form">
@@ -63,6 +66,7 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
   const unreadEl = root.querySelector("#wp-unread") as HTMLSpanElement;
   const messages = root.querySelector("#wp-messages") as HTMLDivElement;
   const membersEl = root.querySelector("#wp-members") as HTMLDivElement;
+  const warnEl = root.querySelector("#wp-warn") as HTMLDivElement;
   const statusEl = root.querySelector("#wp-status") as HTMLSpanElement;
   const latencyEl = root.querySelector("#wp-latency") as HTMLSpanElement;
   const reactionsBar = root.querySelector("#wp-reactions") as HTMLDivElement;
@@ -74,9 +78,12 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
   let memberCount = 0;
   let latencyText = "";
   let unread = 0;
+  let warned = false;
 
   function refreshLauncher() {
-    const bits = ["Watch Party"];
+    // The warning has to be visible while collapsed too — that is exactly when
+    // someone is staring at the wrong title wondering why nothing syncs.
+    const bits = [warned ? "⚠️ Watch Party" : "Watch Party"];
     if (memberCount) bits.push(`${memberCount}\u{1F465}`); // 👥
     if (latencyText) bits.push(latencyText);
     launchInfo.textContent = bits.join(" · ");
@@ -144,8 +151,19 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
     },
     setMembers(members) {
       memberCount = members.length;
-      membersEl.textContent =
-        members.map((m) => (m.isHost ? `★ ${m.name}` : m.name)).join(" · ");
+      const hostContent = members.find((m) => m.isHost)?.content ?? null;
+      membersEl.textContent = members
+        .map((m) => {
+          const off = !m.isHost && contentConflicts(m.content, hostContent);
+          return `${m.isHost ? "★ " : ""}${m.name}${off ? " ⚠️" : ""}`;
+        })
+        .join(" · ");
+      refreshLauncher();
+    },
+    setWarning(text) {
+      warned = !!text;
+      warnEl.textContent = text || "";
+      warnEl.style.display = text ? "block" : "none";
       refreshLauncher();
     },
     setStatus(text) {
