@@ -29,6 +29,14 @@ export type ConnState = "online" | "reconnecting" | "offline";
 
 const REACTIONS = ["❤️", "😂", "😮", "😍", "🔥", "👏", "💀"];
 
+/**
+ * How many messages the panel keeps. Every chat line AND every activity notice
+ * ("Sam paused", "Alex jumped to 25:00") is a node, so a feature-length party
+ * accumulates thousands of them — sitting in the page, over the video, for the
+ * whole session. Old ones are dropped from the top once we pass this.
+ */
+const MAX_MESSAGES = 200;
+
 export function mountChat(handlers: ChatHandlers): ChatUI {
   const root = document.createElement("div");
   root.id = "wp-root";
@@ -141,6 +149,10 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
         (el.querySelector(".wp-text") as HTMLElement).textContent = msg.text;
       }
       messages.appendChild(el);
+      // Trim before scrolling so the scroll lands on the final height.
+      while (messages.childElementCount > MAX_MESSAGES) {
+        messages.firstElementChild?.remove();
+      }
       messages.scrollTop = messages.scrollHeight;
       // Badge unread on the launcher while collapsed — but only for real chat,
       // not activity notices, to avoid noise.
