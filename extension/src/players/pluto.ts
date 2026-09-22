@@ -8,9 +8,17 @@
  * duration and gate the adapter on).
  */
 import { htmlVideoAdapter } from "./htmlVideo";
+import { idFromUrl } from "./identity";
 
 export const plutoAdapter = htmlVideoAdapter({
   name: "pluto",
   minSeekIntervalMs: 1500,
   playPauseDriftSec: 2.5,
+  // Prefer the episode id when there is one, so a series lands episode-level.
+  contentId: () =>
+    idFromUrl([
+      /\/on-demand\/series\/[^/]+\/season\/\d+\/episode\/([^/?#]+)/,
+      /\/on-demand\/(?:movies|series)\/([^/?#]+)/,
+      /\/live-tv\/([^/?#]+)/,
+    ]),
 });

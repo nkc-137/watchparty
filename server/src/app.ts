@@ -3,11 +3,13 @@ import { AddressInfo } from "net";
 import { randomUUID } from "crypto";
 import express from "express";
 import { Server } from "socket.io";
-import { RoomRegistry } from "./rooms";
+import { Room, RoomRegistry } from "./rooms";
 import {
   ClientToServerEvents,
   ServerToClientEvents,
   ChatMessage,
+  ContentInfo,
+  contentConflicts,
 } from "./protocol";
 
 export interface AppOptions {
@@ -36,6 +38,18 @@ export function fmtTime(seconds: number): string {
   return (h ? `${h}:` : "") + `${mm}:${String(sec).padStart(2, "0")}`;
 }
 
+/** Clamp a client-supplied ContentInfo to safe, bounded strings. */
+export function sanitizeContent(info: unknown): ContentInfo {
+  const raw = (info ?? {}) as Partial<Record<keyof ContentInfo, unknown>>;
+  const str = (v: unknown, max: number) =>
+    v == null || v === "" ? null : String(v).slice(0, max);
+  return {
+    site: str(raw.site, 32) ?? "",
+    id: str(raw.id, 128),
+    title: str(raw.title, 200),
+  };
+}
+
 /**
  * Build the Watch Party sync server. Pure factory — does not listen until you
  * call `.listen()`, which keeps it testable on an ephemeral port.
@@ -55,6 +69,45 @@ export function createApp(opts: AppOptions = {}): RunningApp {
 
   const registry = new RoomRegistry();
 
+  const systemMessage = (text: string): ChatMessage => ({
+    id: randomUUID(),
+    name: "",
+    text,
+    at: Date.now(),
+    system: true,
+  });
+
+  /**
+   * Announce members who have drifted onto a different title than the host
+   * (and those who have come back). Announcements are latched per member via
+   * `warnedFor`, so a steady mismatch is reported once, not every sample.
+   *
+   * The host is the reference: if the host is on something unreadable, or the
+   * sites differ, nothing is reported — see contentConflicts.
+   */
+  const refreshMismatches = (room: Room) => {
+    const hostContent = registry.hostContent(room);
+    for (const m of room.members.values()) {
+      const off =
+        m.id !== room.hostId && contentConflicts(m.content, hostContent);
+      const key = off ? m.content?.id ?? null : null;
+      if (key === m.warnedFor) continue;
+      if (off) {
+        const what = m.content?.title ? ` (${m.content.title})` : "";
+        io.to(room.code).emit(
+          "chatMessage",
+          systemMessage(`⚠️ ${m.name} is watching something else${what} — their controls won't move the room`)
+        );
+      } else if (m.warnedFor) {
+        io.to(room.code).emit(
+          "chatMessage",
+          systemMessage(`${m.name} is back on the same title`)
+        );
+      }
+      m.warnedFor = key;
+    }
+  };
+
   interface SocketData {
     roomCode?: string;
     name?: string;
@@ -64,14 +117,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
     const data: SocketData = {};
 
     const emitSystem = (roomCode: string, text: string) => {
-      const msg: ChatMessage = {
-        id: randomUUID(),
-        name: "",
-        text,
-        at: Date.now(),
-        system: true,
-      };
-      io.to(roomCode).emit("chatMessage", msg);
+      io.to(roomCode).emit("chatMessage", systemMessage(text));
     };
 
     socket.on("joinRoom", (payload, ack) => {
@@ -98,15 +144,39 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       log(`[join] ${name} (${socket.id}) -> ${roomCode} host=${isHost}`);
     });
 
+    socket.on("setContent", (info) => {
+      if (!data.roomCode) return;
+      const room = registry.get(data.roomCode);
+      const me = room?.members.get(socket.id);
+      if (!room || !me) return;
+      const next = sanitizeContent(info);
+      const prev = me.content;
+      if (prev && prev.site === next.site && prev.id === next.id && prev.title === next.title) {
+        return; // unchanged — the client re-sends on every sample
+      }
+      me.content = next;
+      io.to(room.code).emit("members", registry.memberList(room));
+      refreshMismatches(room);
+    });
+
     socket.on("playbackEvent", (event) => {
       if (!data.roomCode) return;
       const room = registry.get(data.roomCode);
+      // A member who is demonstrably on another title must not drive the room:
+      // their seeks would drag everyone to a position that means nothing here.
+      if (
+        room &&
+        socket.id !== room.hostId &&
+        contentConflicts(room.members.get(socket.id)?.content, registry.hostContent(room))
+      ) {
+        return;
+      }
       if (room) {
         room.lastState = {
           position: event.position,
           playing: event.action !== "pause",
           at: event.at,
-          videoId: event.videoId ?? null,
+          content: event.content ?? null,
         };
       }
       socket.to(data.roomCode).emit("playbackEvent", { ...event, from: socket.id });
@@ -171,7 +241,11 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       if (room) {
         io.to(room.code).emit("members", registry.memberList(room));
         emitSystem(room.code, `${who} left`);
-        if (hostChanged && room.hostId) io.to(room.code).emit("hostChanged", room.hostId);
+        if (hostChanged && room.hostId) {
+          io.to(room.code).emit("hostChanged", room.hostId);
+          // The reference title moved with the host — recheck everyone.
+          refreshMismatches(room);
+        }
       }
       log(`[leave] ${data.name} (${socket.id}) <- ${roomCode}`);
       data.roomCode = undefined;

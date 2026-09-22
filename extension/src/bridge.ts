@@ -4,6 +4,8 @@
  * Both sides use window.postMessage; every message carries this namespace so we
  * ignore unrelated page traffic.
  */
+import { ContentInfo } from "./protocol";
+
 export const NS = "watchparty";
 
 export type PlaybackAction = "play" | "pause" | "seek";
@@ -15,7 +17,7 @@ export interface LocalPlaybackMsg {
   kind: "playback";
   action: PlaybackAction;
   position: number; // seconds
-  videoId: number | null;
+  content: ContentInfo | null;
 }
 
 /** inject -> content: periodic state sample (for host drift broadcasts). */
@@ -25,7 +27,7 @@ export interface LocalStateMsg {
   kind: "state";
   position: number;
   playing: boolean;
-  videoId: number | null;
+  content: ContentInfo | null;
 }
 
 /** inject -> content: player readiness. */
