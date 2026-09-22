@@ -18,6 +18,8 @@ export interface ChatUI {
   setMembers(members: Member[]): void;
   /** Show a banner above the chat, or clear it with null. */
   setWarning(text: string | null): void;
+  /** Show who the room is waiting to buffer, or clear it with null. */
+  setHold(waiting: string[] | null): void;
   setStatus(text: string): void;
   setLatency(ms: number | null): void;
   setConn(state: ConnState): void;
@@ -59,6 +61,7 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
       </div>
       <div id="wp-members"></div>
       <div id="wp-warn"></div>
+      <div id="wp-hold"></div>
       <div id="wp-messages"></div>
       <div id="wp-reactions"></div>
       <form id="wp-form">
@@ -75,6 +78,7 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
   const messages = root.querySelector("#wp-messages") as HTMLDivElement;
   const membersEl = root.querySelector("#wp-members") as HTMLDivElement;
   const warnEl = root.querySelector("#wp-warn") as HTMLDivElement;
+  const holdEl = root.querySelector("#wp-hold") as HTMLDivElement;
   const statusEl = root.querySelector("#wp-status") as HTMLSpanElement;
   const latencyEl = root.querySelector("#wp-latency") as HTMLSpanElement;
   const reactionsBar = root.querySelector("#wp-reactions") as HTMLDivElement;
@@ -87,11 +91,12 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
   let latencyText = "";
   let unread = 0;
   let warned = false;
+  let holding = false;
 
   function refreshLauncher() {
     // The warning has to be visible while collapsed too — that is exactly when
     // someone is staring at the wrong title wondering why nothing syncs.
-    const bits = [warned ? "⚠️ Watch Party" : "Watch Party"];
+    const bits = [holding ? "⏳ Watch Party" : warned ? "⚠️ Watch Party" : "Watch Party"];
     if (memberCount) bits.push(`${memberCount}\u{1F465}`); // 👥
     if (latencyText) bits.push(latencyText);
     launchInfo.textContent = bits.join(" · ");
@@ -176,6 +181,14 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
       warned = !!text;
       warnEl.textContent = text || "";
       warnEl.style.display = text ? "block" : "none";
+      refreshLauncher();
+    },
+    setHold(waiting) {
+      holding = !!waiting?.length;
+      holdEl.textContent = holding
+        ? `⏳ Waiting for ${waiting!.join(", ")} to buffer…`
+        : "";
+      holdEl.style.display = holding ? "block" : "none";
       refreshLauncher();
     },
     setStatus(text) {

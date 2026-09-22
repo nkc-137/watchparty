@@ -107,6 +107,17 @@
   border-bottom: 1px solid rgba(245, 196, 81, 0.35);
 }
 
+/* Buffering hold. Blue, not amber: the room is working as intended. */
+#wp-hold {
+  display: none;
+  padding: 7px 10px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #cfe4ff;
+  background: rgba(90, 160, 245, 0.16);
+  border-bottom: 1px solid rgba(90, 160, 245, 0.35);
+}
+
 #wp-messages {
   flex: 1; overflow-y: auto; padding: 8px 10px;
   display: flex; flex-direction: column; gap: 6px;

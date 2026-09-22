@@ -28,6 +28,8 @@ export interface LocalStateMsg {
   position: number;
   playing: boolean;
   content: ContentInfo | null;
+  /** True while the player can't keep playing — see PlayerAdapter.isBuffering. */
+  buffering: boolean;
 }
 
 /** inject -> content: player readiness. */

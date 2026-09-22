@@ -36,6 +36,13 @@ export interface PlayerAdapter {
   /** Human-readable title for the overlay. Display only; null if unknown. */
   title(): string | null;
 
+  /**
+   * True while the player cannot keep playing (buffering, or re-filling after a
+   * seek). Optional: an adapter that can't tell is treated as always ready, so
+   * a new site degrades to the old behavior rather than stalling the room.
+   */
+  isBuffering?(): boolean;
+
   // --- Optional robustness tuning (defaults keep Netflix's original behavior) ---
 
   /**

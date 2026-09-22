@@ -37,6 +37,7 @@ It has two parts:
 - 🎬 **Synced play / pause / seek** across everyone, with automatic drift correction
 - 💬 **Live chat** with a member list and activity notices ("Alex paused", "Sam jumped to 25:00", joins & leaves)
 - 😂 **Emoji reactions** that float over the video
+- ⏳ **Buffer gate** — nobody starts until everyone has buffered, and if one person stalls mid-film the room parks and resumes together
 - 🎯 **Wrong-title detection** — if someone opens a different episode, the room says so and ignores their play/pause/seek instead of dragging everyone to a meaningless timestamp
 - 📶 **Latency badge** + one-click **⟳ resync** to snap back to the host
 - 🫥 **Collapsible, translucent overlay** — or hide it entirely and keep syncing
@@ -229,7 +230,9 @@ flowchart TB
 - **`players/`** — one adapter per site behind a common interface
   (`players/types.ts`). Each adapter reports a `contentId()` (what is playing)
   and a `title()` (what to show), which is how the room tells "we're watching
-  the same thing" from "you opened episode 2". `netflix.ts` uses Netflix's private player API,
+  the same thing" from "you opened episode 2". An optional `isBuffering()`
+  feeds the buffer gate; adapters that don't implement it simply never hold the
+  room up. `netflix.ts` uses Netflix's private player API,
   `prime.ts`, `tubi.ts`, and `pluto.ts` drive the standard HTML5 `<video>` (via a
   shared `htmlVideo.ts` helper), and `youtube.ts` uses YouTube's `#movie_player`
   API. Add a service by writing a new
@@ -242,6 +245,11 @@ flowchart TB
   member whose id conflicts with the host's is dropped by the server and
   ignored by every client, and the overlay explains why. See
   `contentConflicts()` in `protocol.ts` — the one place the rule lives.
+- **Buffer gate:** the server owns it. A play while anyone is still buffering
+  becomes a `hold` instead of a relayed play, and everyone resumes together on
+  `holdRelease`. Holds always end — on a timeout if someone never recovers
+  (`holdTimeoutMs`), on a pause (which cancels), or when a blocker leaves — so
+  one bad connection can never freeze the party.
 - **Robustness tuning:** Netflix's `seek()` buffers gracefully; Prime's raw
   HTML5 seek is fragile, so its adapter rate-limits/coalesces seeks and avoids
   re-seeking on a plain pause (`minSeekIntervalMs`, `playPauseDriftSec`). Netflix
@@ -282,12 +290,12 @@ The server has an integration suite that boots the **real** server on an
 ephemeral port and drives it with **real** Socket.IO clients — covering rooms,
 host election/handoff, play/pause/seek relay, chat, reactions, activity notices,
 the `JOIN_SECRET` gate, drift/`requestSync`, late-joiner state, and
-wrong-title detection:
+wrong-title detection, and the buffering holds:
 
 ```bash
 cd server
 npm install
-npm test            # -> "18/18 passed" then "PASS"
+npm test            # -> "26/26 passed" then "PASS"
 ```
 
 No framework or extra services required — it's a self-contained runner
@@ -312,7 +320,6 @@ The extension's browser/DOM side is verified by driving a real browser:
 
 ## Roadmap
 
-- "Wait for everyone to buffer before play"
 - Deep-link invites (vs. paste tokens)
 - Per-title auto room codes
 - More streaming services (new adapters)

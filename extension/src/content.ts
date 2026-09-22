@@ -42,6 +42,18 @@ let local: { position: number; playing: boolean; content: ContentInfo | null } =
 // Latest member list, kept so we can tell what the host is watching.
 let members: Member[] = [];
 
+// Whether our own player can keep playing. Reported to the server only on a
+// flip, so a steady state costs nothing.
+let localReady = true;
+
+/** Tell the server when our player starts or stops buffering. */
+function publishReady(buffering: boolean) {
+  const ready = !buffering;
+  if (ready === localReady) return;
+  localReady = ready;
+  socket?.emit("setReady", ready);
+}
+
 /** The host's content — the reference every mismatch is measured against. */
 function hostContent(): ContentInfo | null {
   return members.find((m) => m.isHost)?.content ?? null;
@@ -115,6 +127,7 @@ window.addEventListener("message", (ev) => {
     local.position = data.position;
     local.playing = data.playing;
     publishContent(data.content);
+    publishReady(data.buffering);
     return;
   }
   if (data.kind === "playback") {
@@ -189,6 +202,7 @@ function connect(cfg: StoredConfig) {
         // Register what we're watching before anything else, so the room can
         // flag a mismatch immediately rather than after the first seek.
         if (local.content) s.emit("setContent", local.content);
+        if (!localReady) s.emit("setReady", false);
         refreshWarning();
         // Catch a late joiner up to the room's current position — but only if
         // that position refers to the same title we have open.
@@ -233,6 +247,19 @@ function connect(cfg: StoredConfig) {
     refreshWarning();
   });
 
+  // The room is parked until everyone has buffered. The server decides this;
+  // we just obey and explain it. apply() suppresses the echo, so our own pause
+  // is not reported back as a user action.
+  s.on("hold", (state) => {
+    ui?.setHold(state.waiting);
+    apply("pause", state.position);
+  });
+
+  s.on("holdRelease", (release) => {
+    ui?.setHold(null);
+    if (release.play) apply("play", release.position);
+  });
+
   s.on("chatMessage", (msg) => ui?.addMessage(msg));
 
   // Show reactions from others (we already rendered our own optimistically).
@@ -267,6 +294,7 @@ function disconnect() {
 function teardown() {
   disconnect();
   members = [];
+  localReady = true;
   document.getElementById("wp-root")?.remove();
   ui = null;
 }
