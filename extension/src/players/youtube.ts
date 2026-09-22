@@ -30,6 +30,9 @@ export const youtubeAdapter: PlayerAdapter = {
   // Paused = the "paused" state (2). Playing/buffering count as playing.
   isPaused: () => player()?.getPlayerState() === 2,
   seek: (s) => player()?.seekTo(s, true),
+  // State 3 is YouTube's own "buffering", which is more reliable here than the
+  // underlying element.
+  isBuffering: () => player()?.getPlayerState() === 3,
   play: () => player()?.playVideo(),
   pause: () => player()?.pauseVideo(),
   // The 11-character id in ?v= (or a youtu.be / shorts path).

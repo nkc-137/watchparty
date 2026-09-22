@@ -1,6 +1,6 @@
 import { ContentInfo, Member, SyncState } from "./protocol";
 
-interface RoomMember extends Member {
+export interface RoomMember extends Member {
   /**
    * The content id we last warned the room about for this member, so a
    * mismatch is announced once rather than on every state sample. null when
@@ -9,11 +9,23 @@ interface RoomMember extends Member {
   warnedFor?: string | null;
 }
 
+/** What the room is waiting to do once everyone has buffered. */
+export interface Hold {
+  /** Position everyone is parked at, in seconds. */
+  position: number;
+  /** Whether the room wants to be playing when the hold lifts. */
+  play: boolean;
+  /** Fires if a member never reports ready, so a dead client can't freeze us. */
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
 export interface Room {
   code: string;
   members: Map<string, RoomMember>; // socketId -> member
   hostId: string | null;
   lastState: SyncState | null;
+  /** Non-null while the room is paused waiting for someone to buffer. */
+  hold: Hold | null;
 }
 
 /**
@@ -27,11 +39,18 @@ export class RoomRegistry {
   join(roomCode: string, socketId: string, name: string): { room: Room; isHost: boolean } {
     let room = this.rooms.get(roomCode);
     if (!room) {
-      room = { code: roomCode, members: new Map(), hostId: null, lastState: null };
+      room = {
+        code: roomCode,
+        members: new Map(),
+        hostId: null,
+        lastState: null,
+        hold: null,
+      };
       this.rooms.set(roomCode, room);
     }
     const isHost = room.hostId === null;
-    room.members.set(socketId, { id: socketId, name, isHost });
+    // Ready until told otherwise — a member who never reports never blocks.
+    room.members.set(socketId, { id: socketId, name, isHost, ready: true });
     if (isHost) room.hostId = socketId;
     return { room, isHost };
   }
@@ -44,6 +63,8 @@ export class RoomRegistry {
     room.members.delete(socketId);
 
     if (room.members.size === 0) {
+      // Drop the pending hold timer with the room, or it fires into the void.
+      if (room.hold?.timer) clearTimeout(room.hold.timer);
       this.rooms.delete(roomCode);
       return { room: null, hostChanged: false };
     }
@@ -65,11 +86,12 @@ export class RoomRegistry {
 
   /** Wire-safe view of the members (drops server-only bookkeeping). */
   memberList(room: Room): Member[] {
-    return [...room.members.values()].map(({ id, name, isHost, content }) => ({
+    return [...room.members.values()].map(({ id, name, isHost, content, ready }) => ({
       id,
       name,
       isHost,
       content: content ?? null,
+      ready: ready !== false,
     }));
   }
 

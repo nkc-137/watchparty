@@ -4,6 +4,7 @@
  */
 import { PlayerAdapter } from "./types";
 import { cleanTitle, idFromUrl } from "./identity";
+import { videoBuffering } from "./media";
 
 // Netflix's globals are untyped; keep the surface tiny and defensive.
 declare const netflix: any;
@@ -38,6 +39,9 @@ export const netflixAdapter: PlayerAdapter = {
     return p?.isPaused ? p.isPaused() : false;
   },
   seek: (s) => getPlayer()?.seek(Math.round(s * 1000)),
+  // Netflix's private API exposes no buffering flag, but it plays through a
+  // normal <video>, so read readiness off the element.
+  isBuffering: videoBuffering,
   play: () => getPlayer()?.play(),
   pause: () => getPlayer()?.pause(),
   // Netflix ids are per-episode, so this catches "you opened episode 2".

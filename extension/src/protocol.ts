@@ -52,6 +52,32 @@ export interface SyncState {
   content?: ContentInfo | null;
 }
 
+/**
+ * A room-wide pause while someone catches up on buffering. The server owns
+ * this: holds begin when a play is requested (or playback stalls) and at least
+ * one member is not ready, and end when everyone is ready again.
+ */
+export interface HoldState {
+  /** Display names of the members being waited on. */
+  waiting: string[];
+  /** Position everyone should hold at, in seconds. */
+  position: number;
+}
+
+/** Sent when a hold ends. */
+export interface HoldRelease {
+  /** Position to resume from, in seconds. */
+  position: number;
+  /** Whether the room was trying to play (vs. was paused anyway). */
+  play: boolean;
+  /**
+   * True when the hold was abandoned on a timeout rather than everyone
+   * becoming ready — a member whose client stalled or died must not be able to
+   * freeze the party indefinitely.
+   */
+  timedOut: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   name: string;
@@ -67,6 +93,8 @@ export interface Member {
   isHost: boolean;
   /** Last reported content, so the overlay can flag who is off-title. */
   content?: ContentInfo | null;
+  /** False while this member's player is buffering. Unknown counts as ready. */
+  ready?: boolean;
 }
 
 export interface JoinRoomResult {
@@ -97,6 +125,8 @@ export interface ClientToServerEvents {
   requestSync: () => void;
   /** Report what this member is watching; re-sent whenever it changes. */
   setContent: (info: ContentInfo) => void;
+  /** Report buffering state. Edge-triggered: only sent when it flips. */
+  setReady: (ready: boolean) => void;
 }
 
 export interface ServerToClientEvents {
@@ -107,6 +137,10 @@ export interface ServerToClientEvents {
   hostChanged: (hostId: string) => void;
   reaction: (r: Reaction) => void;
   syncRequested: () => void;
+  /** The room is holding at a position until everyone has buffered. */
+  hold: (state: HoldState) => void;
+  /** The hold is over — resume (or stay paused, per `play`). */
+  holdRelease: (release: HoldRelease) => void;
 }
 
 export interface StoredConfig {

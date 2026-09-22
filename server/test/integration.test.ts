@@ -398,6 +398,178 @@ test("the room is told once when someone drifts off-title, and once when they re
   await recovered;
 });
 
+
+// ---- buffering holds --------------------------------------------------------
+
+/** Put a room into "playing" so a stall has something to interrupt. */
+async function startPlaying(host: Client, position = 100) {
+  host.emit("playbackEvent", { action: "play", position, at: Date.now() });
+  await new Promise((r) => setTimeout(r, 60));
+}
+
+test("play is held while someone is still buffering, and not relayed", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "hold-play", name: "Host" });
+  const slow = await connect();
+  await join(slow, { roomCode: "hold-play", name: "Slow" });
+
+  slow.emit("setReady", false);
+  await new Promise((r) => setTimeout(r, 60));
+
+  // The host's play must turn into a hold, not a play for everyone else.
+  const held = waitFor(slow, "hold");
+  const noPlay = expectNo(slow, "playbackEvent");
+  host.emit("playbackEvent", { action: "play", position: 90, at: Date.now() });
+
+  const state = await held;
+  assert.deepStrictEqual(state.waiting, ["Slow"]);
+  assert.strictEqual(state.position, 90);
+  await noPlay;
+});
+
+test("the hold lifts once everyone is ready, and resumes at the hold position", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "hold-release", name: "Host" });
+  const slow = await connect();
+  await join(slow, { roomCode: "hold-release", name: "Slow" });
+
+  slow.emit("setReady", false);
+  await new Promise((r) => setTimeout(r, 60));
+  const held = waitFor(host, "hold");
+  host.emit("playbackEvent", { action: "play", position: 90, at: Date.now() });
+  await held;
+
+  const released = waitFor(host, "holdRelease");
+  slow.emit("setReady", true);
+  const r = await released;
+  assert.strictEqual(r.play, true, "room resumes");
+  assert.strictEqual(r.timedOut, false, "released because everyone is ready");
+  assert.strictEqual(r.position, 90);
+});
+
+test("a stall mid-playback parks the whole room", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "hold-stall", name: "Host" });
+  const slow = await connect();
+  await join(slow, { roomCode: "hold-stall", name: "Slow" });
+  await startPlaying(host);
+
+  const held = waitFor(host, "hold", (st: any) => st.waiting.includes("Slow"));
+  slow.emit("setReady", false);
+  await held;
+});
+
+test("a member who never recovers is given up on, not waited on forever", async () => {
+  const impatient = createApp({ quiet: true, holdTimeoutMs: 150 });
+  const port = await impatient.listen(0);
+  const url = `http://localhost:${port}`;
+
+  const mk = async (name: string): Promise<Client> => {
+    const c: Client = io(url, { transports: ["websocket"], forceNew: true });
+    await new Promise((r) => c.on("connect", r));
+    await new Promise((res) => c.emit("joinRoom", { roomCode: "t", name }, res));
+    return c;
+  };
+  const host = await mk("Host");
+  const gone = await mk("Gone");
+
+  gone.emit("setReady", false);
+  await new Promise((r) => setTimeout(r, 60));
+  host.emit("playbackEvent", { action: "play", position: 10, at: Date.now() });
+
+  const r: any = await new Promise((res) => host.on("holdRelease", res));
+  assert.strictEqual(r.timedOut, true, "gave up");
+  assert.strictEqual(r.play, true, "and played anyway");
+
+  host.disconnect();
+  gone.disconnect();
+  await impatient.close();
+});
+
+test("pausing during a hold cancels it instead of resuming later", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "hold-cancel", name: "Host" });
+  const slow = await connect();
+  await join(slow, { roomCode: "hold-cancel", name: "Slow" });
+
+  slow.emit("setReady", false);
+  await new Promise((r) => setTimeout(r, 60));
+  const held = waitFor(slow, "hold");
+  host.emit("playbackEvent", { action: "play", position: 90, at: Date.now() });
+  await held;
+
+  const cancelled = waitFor(slow, "holdRelease");
+  host.emit("playbackEvent", { action: "pause", position: 90, at: Date.now() });
+  const r = await cancelled;
+  assert.strictEqual(r.play, false, "cancelled, so nothing resumes");
+
+  // And becoming ready afterwards must not start playback behind our backs.
+  const quiet = expectNo(slow, "holdRelease");
+  slow.emit("setReady", true);
+  await quiet;
+});
+
+test("a member who leaves stops being waited on", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "hold-leave", name: "Host" });
+  const slow = await connect();
+  await join(slow, { roomCode: "hold-leave", name: "Slow" });
+
+  slow.emit("setReady", false);
+  await new Promise((r) => setTimeout(r, 60));
+  const held = waitFor(host, "hold");
+  host.emit("playbackEvent", { action: "play", position: 90, at: Date.now() });
+  await held;
+
+  const released = waitFor(host, "holdRelease");
+  slow.disconnect();
+  const r = await released;
+  assert.strictEqual(r.play, true, "room carries on without them");
+});
+
+test("someone on a different title never holds the room", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "hold-offtitle", name: "Host" });
+  host.emit("setContent", { site: "netflix", id: "81001", title: "Arrival" });
+
+  const stray = await connect();
+  await join(stray, { roomCode: "hold-offtitle", name: "Stray" });
+  stray.emit("setContent", { site: "netflix", id: "81002", title: "Some Sequel" });
+  stray.emit("setReady", false);
+  await new Promise((r) => setTimeout(r, 60));
+
+  // They are already excluded from sync, so their buffering is not our problem:
+  // the play relays as normal and no hold is announced.
+  const relayed = waitFor(stray, "playbackEvent");
+  host.emit("playbackEvent", { action: "play", position: 90, at: Date.now() });
+  const e = await relayed;
+  assert.strictEqual(e.action, "play");
+});
+
+test("members carry readiness, and a joiner mid-hold is told about it", async () => {
+  const host = await connect();
+  await join(host, { roomCode: "hold-join", name: "Host" });
+  const slow = await connect();
+  await join(slow, { roomCode: "hold-join", name: "Slow" });
+
+  slow.emit("setReady", false);
+  const ms = await waitFor(host, "members", (list: any[]) =>
+    list.some((m) => m.name === "Slow" && m.ready === false)
+  );
+  assert.strictEqual(ms.find((m: any) => m.isHost).ready, true, "host still ready");
+
+  const held = waitFor(host, "hold");
+  host.emit("playbackEvent", { action: "play", position: 90, at: Date.now() });
+  await held;
+
+  // A latecomer must see the banner too, not sit there wondering why it's paused.
+  const late = await connect();
+  const toldOnJoin = waitFor(late, "hold");
+  await join(late, { roomCode: "hold-join", name: "Late" });
+  const st = await toldOnJoin;
+  assert.deepStrictEqual(st.waiting, ["Slow"]);
+});
+
 // ---- runner -----------------------------------------------------------------
 async function main() {
   const app: RunningApp = createApp({ quiet: true });

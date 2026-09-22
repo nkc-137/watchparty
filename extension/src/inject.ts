@@ -108,6 +108,7 @@ function sample() {
   const time = adapter.getTime(); // seconds
   const paused = adapter.isPaused();
   const content = readContent();
+  const buffering = adapter.isBuffering?.() ?? false;
   const now = Date.now();
   const suppressed = now < suppressUntil;
 
@@ -132,7 +133,15 @@ function sample() {
   }
 
   // Periodic state sample (content script decides whether to broadcast as host).
-  post({ ns: NS, dir: "fromPage", kind: "state", position: time, playing: !paused, content });
+  post({
+    ns: NS,
+    dir: "fromPage",
+    kind: "state",
+    position: time,
+    playing: !paused,
+    content,
+    buffering,
+  });
 
   lastPaused = paused;
   lastTime = time;

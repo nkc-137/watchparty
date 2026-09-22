@@ -10,26 +10,7 @@
  */
 import { PlayerAdapter } from "./types";
 import { cleanTitle } from "./identity";
-
-function contentVideo(): HTMLVideoElement | null {
-  const vids = Array.from(document.querySelectorAll("video")) as HTMLVideoElement[];
-  let best: HTMLVideoElement | null = null;
-  let bestArea = 0;
-  for (const v of vids) {
-    if (!isFinite(v.duration) || v.duration <= 0) continue;
-    const r = v.getBoundingClientRect();
-    const area = r.width * r.height;
-    // Prefer the largest *visible* video, so a hidden/off-screen ad player
-    // (zero area) never wins over the real, on-screen content video.
-    if (area > 0 && area > bestArea) {
-      best = v;
-      bestArea = area;
-    }
-  }
-  // Fall back to any video with a duration, then any video at all, if none
-  // were visible yet (e.g. still laying out).
-  return best || vids.find((v) => isFinite(v.duration) && v.duration > 0) || vids[0] || null;
-}
+import { contentVideo, videoBuffering } from "./media";
 
 export interface HtmlVideoTuning {
   name: string;
@@ -63,6 +44,7 @@ export function htmlVideoAdapter(t: HtmlVideoTuning): PlayerAdapter {
       void contentVideo()?.play();
     },
     pause: () => contentVideo()?.pause(),
+    isBuffering: videoBuffering,
     contentId: () => t.contentId?.() ?? null,
     title: cleanTitle,
   };
