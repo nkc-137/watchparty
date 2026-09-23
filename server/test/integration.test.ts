@@ -334,6 +334,9 @@ test("contentConflicts only fires when we can actually tell titles apart", async
     false,
     "cross-site"
   );
+  // Prime's id depends on the URL you arrived by, so it is never compared.
+  const pv = (id: string) => ({ site: "prime", id, title: "T" });
+  assert.strictEqual(contentConflicts(pv("B001"), pv("B002")), false, "prime ids are not trusted");
 });
 
 test("members list carries each member's content", async () => {

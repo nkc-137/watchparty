@@ -257,6 +257,10 @@ test("the extension's protocol copy agrees with the server's", () => {
     [nf("1"), null],
     [null, null],
     [nf("1"), { site: "prime", id: "B00ABCDEFG", title: "T" }],
+    [
+      { site: "prime", id: "B001", title: "T" },
+      { site: "prime", id: "B002", title: "T" },
+    ],
   ];
   for (const [a, b] of pairs) {
     assert.strictEqual(

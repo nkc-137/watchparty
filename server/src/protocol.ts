@@ -20,12 +20,24 @@ export interface ContentInfo {
 }
 
 /**
+ * Sites whose content id is not comparable between two members, so the
+ * mismatch check is switched off for them entirely.
+ *
+ * Prime derives its id from whichever detail URL you happened to arrive by
+ * (gti= on one route, /detail/<asin> on another), so two people watching the
+ * same episode routinely carry different ids and get wrongly flagged as
+ * off-title — which pauses sync for a room that is perfectly in sync.
+ */
+const UNTRUSTED_ID_SITES = new Set(["prime"]);
+
+/**
  * Whether two members are demonstrably watching different things.
  *
  * Deliberately conservative — it only returns true when we are *sure*:
  *  - different sites are never compared (the same film on Netflix and Prime is
  *    a legitimate party, and their ids are unrelated anyway),
  *  - an unknown id on either side means "can't tell", not "mismatch",
+ *  - sites whose id we don't trust are never compared at all,
  * so the warning never fires on a room that is actually in sync.
  */
 export function contentConflicts(
@@ -34,6 +46,7 @@ export function contentConflicts(
 ): boolean {
   if (!a || !b) return false;
   if (a.site !== b.site) return false;
+  if (UNTRUSTED_ID_SITES.has(a.site)) return false;
   if (!a.id || !b.id) return false;
   return a.id !== b.id;
 }
