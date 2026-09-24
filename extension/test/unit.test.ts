@@ -23,8 +23,6 @@ import { YOUTUBE_ID_PATTERNS } from "../src/players/youtube";
 import { PRIME_ID_PATTERNS } from "../src/players/prime";
 import { TUBI_ID_PATTERNS } from "../src/players/tubi";
 import { PLUTO_ID_PATTERNS } from "../src/players/pluto";
-import { contentConflicts as extensionConflicts } from "../src/protocol";
-import { contentConflicts as serverConflicts } from "../../server/src/protocol";
 import { StoredConfig, SyncState } from "../src/protocol";
 
 // ---- tiny test harness ------------------------------------------------------
@@ -242,33 +240,6 @@ test("Pluto prefers the episode id over the series id", () => {
     ),
     "ep-7"
   );
-});
-
-// ---- protocol parity --------------------------------------------------------
-
-test("the extension's protocol copy agrees with the server's", () => {
-  // protocol.ts is duplicated by hand ("keep the two in sync"), so a silent
-  // drift in the mismatch rule would split the room's behavior in half.
-  const nf = (id: string | null) => ({ site: "netflix", id, title: "T" });
-  const pairs: [any, any][] = [
-    [nf("1"), nf("2")],
-    [nf("1"), nf("1")],
-    [nf(null), nf("2")],
-    [nf("1"), null],
-    [null, null],
-    [nf("1"), { site: "prime", id: "B00ABCDEFG", title: "T" }],
-    [
-      { site: "prime", id: "B001", title: "T" },
-      { site: "prime", id: "B002", title: "T" },
-    ],
-  ];
-  for (const [a, b] of pairs) {
-    assert.strictEqual(
-      extensionConflicts(a, b),
-      serverConflicts(a, b),
-      `disagreement on ${JSON.stringify([a, b])}`
-    );
-  }
 });
 
 // ---- runner -----------------------------------------------------------------

@@ -15,7 +15,6 @@ import {
   ServerToClientEvents,
   ChatMessage,
   ContentInfo,
-  contentConflicts,
 } from "./protocol";
 
 export interface AppOptions {
@@ -128,51 +127,11 @@ export function createApp(opts: AppOptions = {}): RunningApp {
     io.to(roomCode).emit("chatMessage", msg);
   };
 
-  /**
-   * Announce members who have drifted onto a different title than the host
-   * (and those who have come back). Announcements are latched per member via
-   * `warnedFor`, so a steady mismatch is reported once, not every sample.
-   *
-   * The host is the reference: if the host is on something unreadable, or the
-   * sites differ, nothing is reported — see contentConflicts.
-   */
-  const refreshMismatches = (room: Room) => {
-    const hostContent = registry.hostContent(room);
-    for (const m of room.members.values()) {
-      const off =
-        m.id !== room.hostId && contentConflicts(m.content, hostContent);
-      const key = off ? m.content?.id ?? null : null;
-      if (key === m.warnedFor) continue;
-      if (off) {
-        const what = m.content?.title ? ` (${m.content.title})` : "";
-        emitChat(
-          room.code,
-          systemMessage(
-            `⚠️ ${m.name} is watching something else${what} — their controls won't move the room`
-          )
-        );
-      } else if (m.warnedFor) {
-        emitChat(room.code, systemMessage(`${m.name} is back on the same title`));
-      }
-      m.warnedFor = key;
-    }
-  };
-
   // --- Buffering holds -------------------------------------------------------
 
-  /**
-   * Members the room is waiting on.
-   *
-   * Someone who is off-title is deliberately excluded: they are already not
-   * being synced (see contentConflicts), so letting their buffering freeze
-   * everyone else would punish the room for one person's mistake.
-   */
-  const blockers = (room: Room): RoomMember[] => {
-    const hostContent = registry.hostContent(room);
-    return [...room.members.values()].filter(
-      (m) => m.ready === false && !contentConflicts(m.content, hostContent)
-    );
-  };
+  /** Members the room is waiting on. */
+  const blockers = (room: Room): RoomMember[] =>
+    [...room.members.values()].filter((m) => m.ready === false);
 
   /** Where the room is right now, projecting from the last known state. */
   const currentPosition = (room: Room): number => {
@@ -343,9 +302,6 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       }
       me.content = next;
       io.to(room.code).emit("members", registry.memberList(room));
-      refreshMismatches(room);
-      // Going off-title removes you from the blockers, and vice versa.
-      refreshHold(room);
     });
 
     socket.on("setReady", (ready) => {
@@ -372,15 +328,6 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       // limited alongside chat rather than trusted.
       if (!withinLimit("playback")) return;
       const room = registry.get(data.roomCode);
-      // A member who is demonstrably on another title must not drive the room:
-      // their seeks would drag everyone to a position that means nothing here.
-      if (
-        room &&
-        socket.id !== room.hostId &&
-        contentConflicts(room.members.get(socket.id)?.content, registry.hostContent(room))
-      ) {
-        return;
-      }
       if (room) {
         // A play can't go out while anyone is still buffering — that is the
         // whole point of the gate. Hold instead, and play on release.
@@ -466,8 +413,6 @@ export function createApp(opts: AppOptions = {}): RunningApp {
         emitSystem(room.code, `${who} left`);
         if (hostChanged && room.hostId) {
           io.to(room.code).emit("hostChanged", room.hostId);
-          // The reference title moved with the host — recheck everyone.
-          refreshMismatches(room);
         }
         // The person we were waiting for may have just walked out.
         refreshHold(room);

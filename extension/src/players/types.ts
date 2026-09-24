@@ -26,10 +26,8 @@ export interface PlayerAdapter {
 
   /**
    * Stable id for the title currently playing, unique within this site
-   * (episode-level where the site allows it). Used to detect that someone
-   * opened the wrong thing, so it must NOT be derived from a display title —
-   * those are localized and differ per account. Return null when unknown;
-   * unknown is treated as "can't tell", never as a mismatch.
+   * (episode-level where the site allows it). Informational only — it is
+   * reported to the room but never used to gate sync. Null when unknown.
    */
   contentId(): string | null;
 

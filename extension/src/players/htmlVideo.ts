@@ -18,8 +18,7 @@ export interface HtmlVideoTuning {
   playPauseDriftSec?: number;
   /**
    * Reads the site's content id (see PlayerAdapter.contentId). Omit it and the
-   * adapter reports null, which disables mismatch detection for that site
-   * rather than risking a false alarm.
+   * adapter reports null.
    */
   contentId?: () => string | null;
 }

@@ -230,23 +230,14 @@ flowchart TB
 ```
 
 - **`players/`** — one adapter per site behind a common interface
-  (`players/types.ts`). Each adapter reports a `contentId()` (what is playing)
-  and a `title()` (what to show), which is how the room tells "we're watching
-  the same thing" from "you opened episode 2". An optional `isBuffering()`
+  (`players/types.ts`). Each adapter reports a `contentId()` and a `title()`
+  (what is playing — informational only, never used to gate sync). An optional `isBuffering()`
   feeds the buffer gate; adapters that don't implement it simply never hold the
   room up. `netflix.ts` uses Netflix's private player API,
   `prime.ts`, `tubi.ts`, and `pluto.ts` drive the standard HTML5 `<video>` (via a
   shared `htmlVideo.ts` helper), and `youtube.ts` uses YouTube's `#movie_player`
   API. Add a service by writing a new
   adapter and registering it in `players/index.ts` — nothing else changes.
-- **Content identity:** `contentId()` must come from the URL or the site's
-  player API, never from a display title — titles are localized, so comparing
-  them would falsely flag friends in other regions. Ids are only compared
-  *within* one site (the same film on Netflix and Prime is a legitimate party),
-  and an unknown id on either side means "can't tell", never "mismatch". A
-  member whose id conflicts with the host's is dropped by the server and
-  ignored by every client, and the overlay explains why. See
-  `contentConflicts()` in `protocol.ts` — the one place the rule lives.
 - **Buffer gate:** the server owns it. A play while anyone is still buffering
   becomes a `hold` instead of a relayed play, and everyone resumes together on
   `holdRelease`. Holds always end — on a timeout if someone never recovers

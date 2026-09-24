@@ -1,13 +1,8 @@
 /**
  * Helpers for identifying *what* is playing, shared by the site adapters.
  *
- * Two different things live here, and the distinction matters:
- *  - `contentId()` is the identity used to decide whether two people are
- *    watching the same thing. It must be stable across accounts, regions and
- *    languages, so it is always an id from the URL or the site's player API —
- *    never a title string.
- *  - `cleanTitle()` produces a label for the UI only. Titles are localized, so
- *    they are never used for the mismatch check.
+ *  - `idFromUrl()` reads a site's content id from the URL.
+ *  - `cleanTitle()` produces a label for the UI.
  */
 
 /** Site name suffixes to strip from document.title, e.g. " - Netflix". */

@@ -15,7 +15,6 @@ import {
   StoredConfig,
   ContentInfo,
   Member,
-  contentConflicts,
 } from "./protocol";
 import { mountChat, ChatUI } from "./chat";
 import {
@@ -42,7 +41,7 @@ let local: { position: number; playing: boolean; content: ContentInfo | null } =
   content: null,
 };
 
-// Latest member list, kept so we can tell what the host is watching.
+// Latest member list.
 let members: Member[] = [];
 
 // Whether our own player can keep playing. Reported to the server only on a
@@ -57,50 +56,11 @@ function publishReady(buffering: boolean) {
   socket?.emit("setReady", ready);
 }
 
-/** The host's content — the reference every mismatch is measured against. */
-function hostContent(): ContentInfo | null {
-  return members.find((m) => m.isHost)?.content ?? null;
-}
-
-/**
- * True when this tab is demonstrably on a different title than the host, in
- * which case we neither send nor apply playback events: our positions refer to
- * different videos, so acting on them would only scramble both sides.
- */
-function offTitle(): boolean {
-  return contentConflicts(local.content, hostContent());
-}
-
 /** Tell the server what we're watching whenever it changes. */
 function publishContent(next: ContentInfo | null) {
   if (sameContent(local.content, next)) return;
   local.content = next;
   if (next && socket?.connected) socket.emit("setContent", next);
-  refreshWarning();
-}
-
-/** Turn the member list into the one-line banner shown above the chat. */
-function refreshWarning() {
-  if (!ui) return;
-  const host = members.find((m) => m.isHost);
-  if (offTitle()) {
-    const mine = local.content?.title;
-    const theirs = host?.content?.title;
-    ui.setWarning(
-      `⚠️ You're watching ${mine ? `“${mine}”` : "a different title"}${
-        theirs ? ` — the room is on “${theirs}”` : " — not what the room is on"
-      }. Sync is paused until you open the same one.`
-    );
-    return;
-  }
-  const strays = members
-    .filter((m) => !m.isHost && contentConflicts(m.content, hostContent()))
-    .map((m) => m.name);
-  ui.setWarning(
-    strays.length
-      ? `⚠️ ${strays.join(", ")} ${strays.length > 1 ? "are" : "is"} on a different title — not synced.`
-      : null
-  );
 }
 
 // When we apply a remote command we briefly ignore our own resulting local
@@ -131,8 +91,6 @@ window.addEventListener("message", (ev) => {
   if (data.kind === "playback") {
     if (Date.now() < applyingUntil) return; // don't echo applied commands
     local.position = data.position;
-    // Don't drag the room around from a different title.
-    if (offTitle()) return;
     socket?.emit("playbackEvent", {
       action: data.action,
       position: data.position,
@@ -194,14 +152,10 @@ function connect(cfg: StoredConfig) {
         if (res.history?.length) ui?.addHistory(res.history);
         ui?.setStatus(statusText());
         ui?.setConn("online");
-        // Register what we're watching before anything else, so the room can
-        // flag a mismatch immediately rather than after the first seek.
         if (local.content) s.emit("setContent", local.content);
         if (!localReady) s.emit("setReady", false);
-        refreshWarning();
-        // Catch a late joiner up to the room's current position — but only if
-        // that position refers to the same title we have open.
-        if (res.state && !contentConflicts(res.state.content, local.content)) {
+        // Catch a late joiner up to the room's current position.
+        if (res.state) {
           apply(res.state.playing ? "play" : "pause", projected(res.state));
         }
       }
@@ -214,14 +168,11 @@ function connect(cfg: StoredConfig) {
   });
 
   s.on("playbackEvent", (e) => {
-    // A position from a different title is meaningless here — drop it.
-    if (contentConflicts(e.content, local.content)) return;
     apply(e.action, e.position);
   });
 
   s.on("syncState", (state) => {
     if (isHost) return; // host is the authority; ignore its own echoes
-    if (contentConflicts(state.content, local.content)) return;
     const plan = planSync(local, state, DRIFT_TOLERANCE_SEC);
     if (plan.seek) apply("seek", plan.position);
     if (plan.setPlaying !== null) apply(plan.setPlaying ? "play" : "pause", plan.position);
@@ -232,13 +183,11 @@ function connect(cfg: StoredConfig) {
     isHost = members.find((m) => m.id === s.id)?.isHost ?? isHost;
     ui?.setMembers(members);
     ui?.setStatus(statusText());
-    refreshWarning();
   });
 
   s.on("hostChanged", (hostId) => {
     isHost = hostId === s.id;
     ui?.setStatus(statusText());
-    refreshWarning();
   });
 
   // The room is parked until everyone has buffered. The server decides this;

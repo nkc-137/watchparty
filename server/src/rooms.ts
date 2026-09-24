@@ -1,13 +1,6 @@
-import { ChatMessage, ContentInfo, Member, SyncState } from "./protocol";
+import { ChatMessage, Member, SyncState } from "./protocol";
 
-export interface RoomMember extends Member {
-  /**
-   * The content id we last warned the room about for this member, so a
-   * mismatch is announced once rather than on every state sample. null when
-   * they are in step with the host.
-   */
-  warnedFor?: string | null;
-}
+export type RoomMember = Member;
 
 /** What the room is waiting to do once everyone has buffered. */
 export interface Hold {
@@ -119,11 +112,5 @@ export class RoomRegistry {
       content: content ?? null,
       ready: ready !== false,
     }));
-  }
-
-  /** The host's content, which is the reference everyone else is compared to. */
-  hostContent(room: Room): ContentInfo | null {
-    const host = room.hostId ? room.members.get(room.hostId) : null;
-    return host?.content ?? null;
   }
 }
