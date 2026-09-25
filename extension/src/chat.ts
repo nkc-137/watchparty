@@ -112,6 +112,47 @@ export function mountChat(handlers: ChatHandlers): ChatUI {
   launcher.addEventListener("click", expand);
   collapse.addEventListener("click", collapsePanel);
 
+  // Keep keystrokes typed into the panel away from the player's hotkeys
+  // (space, arrows, f, k, m…). The sites listen on window/document, so we stop
+  // the event at the window in the capture phase — before it can reach them.
+  // Default actions (typing the character, Enter submitting) still happen.
+  let lastIntent = 0; // when the user last deliberately moved focus
+  const guardKeys = (e: KeyboardEvent) => {
+    if (!(e.target instanceof Node) || !root.contains(e.target)) return;
+    e.stopImmediatePropagation();
+    if (e.type !== "keydown") return;
+    if (e.key === "Tab") lastIntent = Date.now();
+    if (e.key === "Escape") {
+      lastIntent = Date.now();
+      input.blur();
+    }
+  };
+  for (const type of ["keydown", "keyup", "keypress"] as const) {
+    window.addEventListener(type, guardKeys, true);
+  }
+
+  // The players also call .focus() on themselves on timers and mouse moves,
+  // which silently pulls the caret out of the chat box and sends the next
+  // keystrokes to the video. Put focus back unless the user moved it: a click
+  // anywhere, Tab/Escape, or switching away from the tab/window.
+  window.addEventListener("pointerdown", () => (lastIntent = Date.now()), true);
+  let refocusTimes: number[] = [];
+  input.addEventListener("blur", (e) => {
+    const now = Date.now();
+    if (now - lastIntent < 500) return;
+    if (root.classList.contains("wp-collapsed")) return;
+    const next = e.relatedTarget as HTMLElement | null;
+    if (next && (next.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(next.tagName))) return;
+    // Don't fight a page that insists on focus (e.g. a modal) in a tight loop.
+    refocusTimes = refocusTimes.filter((t) => now - t < 2000);
+    if (refocusTimes.length >= 5) return;
+    setTimeout(() => {
+      if (!document.hasFocus() || document.activeElement === input) return;
+      refocusTimes.push(Date.now());
+      input.focus({ preventScroll: true });
+    }, 0);
+  });
+
   for (const emoji of REACTIONS) {
     const b = document.createElement("button");
     b.type = "button";
