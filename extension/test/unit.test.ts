@@ -16,6 +16,7 @@ import {
   planSync,
   projected,
   sameContent,
+  stallDetector,
 } from "../src/sync";
 import { cleanTitle, idFromUrl } from "../src/players/identity";
 import { NETFLIX_ID_PATTERNS } from "../src/players/netflix";
@@ -240,6 +241,31 @@ test("Pluto prefers the episode id over the series id", () => {
     ),
     "ep-7"
   );
+});
+
+test("stallDetector rides out a brief re-buffer, like the one after a seek", () => {
+  const s = stallDetector(1500);
+  assert.strictEqual(s.ready(true, 0), true);
+  assert.strictEqual(s.ready(true, 1000), true);
+  assert.strictEqual(s.ready(false, 1400), true);
+  // The clock restarts after recovering, so short blips never add up.
+  assert.strictEqual(s.ready(true, 2000), true);
+  assert.strictEqual(s.ready(true, 3000), true);
+});
+
+test("stallDetector reports a stall once buffering outlasts the grace period", () => {
+  const s = stallDetector(1500);
+  s.ready(true, 0);
+  assert.strictEqual(s.ready(true, 1499), true);
+  assert.strictEqual(s.ready(true, 1500), false);
+  assert.strictEqual(s.ready(false, 4000), true);
+});
+
+test("stallDetector.reset forgets a stall in progress", () => {
+  const s = stallDetector(1500);
+  s.ready(true, 0);
+  s.reset();
+  assert.strictEqual(s.ready(true, 1500), true);
 });
 
 // ---- runner -----------------------------------------------------------------

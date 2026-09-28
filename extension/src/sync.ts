@@ -107,3 +107,33 @@ export function sameContent(
   if (!a || !b) return a === b;
   return a.site === b.site && a.id === b.id && a.title === b.title;
 }
+
+/**
+ * How long buffering must last before we call ourselves stalled. Every seek
+ * re-buffers briefly — Prime's for most of a second — and reporting that
+ * would park the whole room (including us) for a pause-then-resume hitch on
+ * every skip. A real stall outlasts this easily.
+ */
+export const STALL_GRACE_MS = 1500;
+
+/**
+ * Turns raw "is the player buffering?" samples into "can we keep playing?",
+ * treating buffering as a stall only once it has lasted `graceMs`.
+ */
+export function stallDetector(graceMs = STALL_GRACE_MS) {
+  let since: number | null = null;
+  return {
+    /** Feed one sample; returns whether we are ready (not stalled). */
+    ready(buffering: boolean, now = Date.now()): boolean {
+      if (!buffering) {
+        since = null;
+        return true;
+      }
+      if (since === null) since = now;
+      return now - since < graceMs;
+    },
+    reset() {
+      since = null;
+    },
+  };
+}

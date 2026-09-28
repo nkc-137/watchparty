@@ -24,6 +24,7 @@ import {
   planSync,
   projected,
   sameContent,
+  stallDetector,
 } from "./sync";
 
 type WPSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -47,10 +48,12 @@ let members: Member[] = [];
 // Whether our own player can keep playing. Reported to the server only on a
 // flip, so a steady state costs nothing.
 let localReady = true;
+// Rides out the brief re-buffer after a seek so it doesn't hold the room.
+const stall = stallDetector();
 
 /** Tell the server when our player starts or stops buffering. */
 function publishReady(buffering: boolean) {
-  const ready = !buffering;
+  const ready = stall.ready(buffering);
   if (ready === localReady) return;
   localReady = ready;
   socket?.emit("setReady", ready);
@@ -238,6 +241,7 @@ function teardown() {
   disconnect();
   members = [];
   localReady = true;
+  stall.reset();
   document.getElementById("wp-root")?.remove();
   ui = null;
 }
