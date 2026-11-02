@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Watch Party",
   "version": "0.3.0",
-  "description": "Self-hosted watch party sync + chat for Netflix, Amazon Prime Video, YouTube, Tubi, and Pluto TV.",
+  "description": "Self-hosted watch party sync + chat for Netflix, Amazon Prime Video, YouTube, Tubi, Pluto TV, and Einthusan.",
   "permissions": ["storage"],
   "host_permissions": [
     "*://*.netflix.com/*",
@@ -10,7 +10,10 @@
     "*://*.amazon.com/gp/video/*",
     "*://*.youtube.com/*",
     "*://*.tubitv.com/*",
-    "*://*.pluto.tv/*"
+    "*://*.pluto.tv/*",
+        "*://*.einthusan.tv/*",
+        "*://*.einthusan.com/*",
+        "*://*.einthusan.ca/*"
   ],
   "icons": {
     "16": "icon16.png",
@@ -37,7 +40,10 @@
         "*://*.amazon.com/gp/video/*",
         "*://*.youtube.com/*",
         "*://*.tubitv.com/*",
-        "*://*.pluto.tv/*"
+        "*://*.pluto.tv/*",
+        "*://*.einthusan.tv/*",
+        "*://*.einthusan.com/*",
+        "*://*.einthusan.ca/*"
       ],
       "js": ["inject.js"],
       "world": "MAIN",
@@ -50,7 +56,10 @@
         "*://*.amazon.com/gp/video/*",
         "*://*.youtube.com/*",
         "*://*.tubitv.com/*",
-        "*://*.pluto.tv/*"
+        "*://*.pluto.tv/*",
+        "*://*.einthusan.tv/*",
+        "*://*.einthusan.com/*",
+        "*://*.einthusan.ca/*"
       ],
       "js": ["content.js"],
       "css": ["chat.css"],

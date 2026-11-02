@@ -24,6 +24,7 @@ import { YOUTUBE_ID_PATTERNS } from "../src/players/youtube";
 import { PRIME_ID_PATTERNS } from "../src/players/prime";
 import { TUBI_ID_PATTERNS } from "../src/players/tubi";
 import { PLUTO_ID_PATTERNS } from "../src/players/pluto";
+import { EINTHUSAN_ID_PATTERNS } from "../src/players/einthusan";
 import { StoredConfig, SyncState } from "../src/protocol";
 
 // ---- tiny test harness ------------------------------------------------------
@@ -62,7 +63,7 @@ test("projected leaves a paused state alone however stale it is", () => {
 // ---- drift tolerance --------------------------------------------------------
 
 test("fragile HTML5 sites get a looser drift tolerance than Netflix/YouTube", () => {
-  for (const h of ["www.primevideo.com", "www.amazon.com", "tubitv.com", "pluto.tv"]) {
+  for (const h of ["www.primevideo.com", "www.amazon.com", "tubitv.com", "pluto.tv", "einthusan.tv"]) {
     assert.strictEqual(driftToleranceFor(h), 2.5, h);
   }
   for (const h of ["www.netflix.com", "www.youtube.com"]) {
@@ -170,6 +171,7 @@ test("isWatchPage falls back to a feature-length video where the URL says nothin
   assert.strictEqual(isWatchPage("tubitv.com", "/movies/1", [NaN, 0]), false);
   // The ad player plus the real feature: the feature wins.
   assert.strictEqual(isWatchPage("pluto.tv", "/on-demand", [15, 5400]), true);
+  assert.strictEqual(isWatchPage("einthusan.tv", "/movie/watch/42yB/", [9000]), true);
 });
 
 test("isWatchPage says no on sites we don't handle", () => {
@@ -194,6 +196,7 @@ test("cleanTitle strips site branding and tab counters", () => {
   assert.strictEqual(cleanTitle("(3) Some Video - YouTube"), "Some Video");
   assert.strictEqual(cleanTitle("The Expanse | Prime Video"), "The Expanse");
   assert.strictEqual(cleanTitle("Some Film - Tubi"), "Some Film");
+  assert.strictEqual(cleanTitle("Sigma (2026) Hindi in HD - Einthusan"), "Sigma (2026) Hindi in HD");
   assert.strictEqual(cleanTitle("   "), null, "an empty title is unknown, not blank");
 });
 
@@ -226,6 +229,9 @@ test("each site's id patterns pull the right id out of real URLs", () => {
 
     ["https://pluto.tv/us/on-demand/movies/some-movie-id/watch", PLUTO_ID_PATTERNS, "some-movie-id"],
     ["https://pluto.tv/us/live-tv/comedy-channel", PLUTO_ID_PATTERNS, "comedy-channel"],
+
+    ["https://einthusan.tv/movie/watch/42yB/?lang=hindi", EINTHUSAN_ID_PATTERNS, "42yB"],
+    ["https://einthusan.tv/movie/results/?lang=hindi", EINTHUSAN_ID_PATTERNS, null],
   ];
   for (const [url, patterns, want] of table) {
     assert.strictEqual(idFromUrl(patterns, url), want, url);

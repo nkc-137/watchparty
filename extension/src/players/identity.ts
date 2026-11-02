@@ -7,7 +7,7 @@
 
 /** Site name suffixes to strip from document.title, e.g. " - Netflix". */
 const TITLE_SUFFIXES =
-  /\s*[-|–—]\s*(Netflix|YouTube|Prime Video|Amazon\.com|Tubi|Pluto TV)\s*$/i;
+  /\s*[-|–—]\s*(Netflix|YouTube|Prime Video|Amazon\.com|Tubi|Pluto TV|Einthusan)\s*$/i;
 
 /** Leading unread/notification counters YouTube puts in the tab title: "(3) ". */
 const TITLE_PREFIX = /^\(\d+\)\s*/;

@@ -11,7 +11,7 @@
 import { ContentInfo, StoredConfig, SyncState } from "./protocol";
 
 /** Sites whose HTML5 players re-buffer badly, so they get more slack. */
-const FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com|pluto\.tv/;
+const FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com|pluto\.tv|einthusan\./;
 
 /**
  * How far out of sync a follower tolerates before correcting. A tight
@@ -82,7 +82,8 @@ export function isWatchPage(
     hostname.includes("primevideo.com") ||
     hostname.includes("amazon.") ||
     hostname.includes("tubitv.com") ||
-    hostname.includes("pluto.tv")
+    hostname.includes("pluto.tv") ||
+    hostname.includes("einthusan.")
   ) {
     return videoDurations.some((d) => isFinite(d) && d > 60);
   }

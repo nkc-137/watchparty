@@ -4,7 +4,7 @@
 
 # Watch Party
 
-**Watch Netflix, Amazon Prime Video, YouTube, Tubi & Pluto TV in perfect sync with friends — with live chat, reactions, and a self-hosted server you fully control.**
+**Watch Netflix, Amazon Prime Video, YouTube, Tubi, Pluto TV & Einthusan in perfect sync with friends — with live chat, reactions, and a self-hosted server you fully control.**
 
 <sub>Play · Pause · Seek stay synced for everyone · Live chat + emoji reactions · No video ever leaves your friends' own accounts</sub>
 
@@ -17,7 +17,7 @@
 ## What is this?
 
 Watch Party is a Teleparty-style tool for remote movie nights. Everyone streams
-the same title from **their own** Netflix, Prime Video, YouTube, Tubi, or Pluto TV account, and a small
+the same title from **their own** Netflix, Prime Video, YouTube, Tubi, Pluto TV, or Einthusan account, and a small
 server keeps everyone's playback in step — when one person plays, pauses, or
 seeks, everyone follows. A chat sidebar with emoji reactions sits over the video.
 
@@ -45,7 +45,7 @@ It has two parts:
 - 🫥 **Collapsible, translucent overlay** — or hide it entirely and keep syncing
 - 🔗 **One-click invites** — a token bundles the server URL, room, and secret
 - 🔒 **Self-hosted & private** — no accounts, no tracking; rooms gated by a shared secret, with an origin allowlist, per-room size cap and flood limits on by default
-- 🧩 **Netflix, Prime Video, YouTube, Tubi & Pluto TV**, with a pluggable adapter system for adding more sites
+- 🧩 **Netflix, Prime Video, YouTube, Tubi, Pluto TV & Einthusan**, with a pluggable adapter system for adding more sites
 
 ---
 
@@ -215,7 +215,7 @@ flowchart TB
         direction TB
         subgraph main["MAIN world"]
             inject["inject.ts<br/>picks a site adapter,<br/>reads/controls the player"]
-            adapters["players/*<br/>netflix · prime · youtube · tubi · pluto"]
+            adapters["players/*<br/>netflix · prime · youtube · tubi · pluto · einthusan"]
             inject --- adapters
         end
         subgraph iso["ISOLATED world"]
@@ -234,7 +234,7 @@ flowchart TB
   (what is playing — informational only, never used to gate sync). An optional `isBuffering()`
   feeds the buffer gate; adapters that don't implement it simply never hold the
   room up. `netflix.ts` uses Netflix's private player API,
-  `prime.ts`, `tubi.ts`, and `pluto.ts` drive the standard HTML5 `<video>` (via a
+  `prime.ts`, `tubi.ts`, `pluto.ts`, and `einthusan.ts` drive the standard HTML5 `<video>` (via a
   shared `htmlVideo.ts` helper), and `youtube.ts` uses YouTube's `#movie_player`
   API. Add a service by writing a new
   adapter and registering it in `players/index.ts` — nothing else changes.

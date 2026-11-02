@@ -10,7 +10,7 @@ import { createHash, timingSafeEqual } from "crypto";
 
 /** Host patterns the extension actually runs on — the only legitimate origins. */
 const SITE_ORIGINS =
-  /^https?:\/\/([\w-]+\.)*(netflix\.com|primevideo\.com|amazon\.[\w.]+|youtube\.com|tubitv\.com|pluto\.tv)$/;
+  /^https?:\/\/([\w-]+\.)*(netflix\.com|primevideo\.com|amazon\.[\w.]+|youtube\.com|tubitv\.com|pluto\.tv|einthusan\.(?:tv|com|ca))$/;
 
 /**
  * Whether a browser Origin may open a socket.

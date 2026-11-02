@@ -630,6 +630,7 @@ test("originAllowed accepts the streaming sites and nothing else", async () => {
     "https://www.youtube.com",
     "https://tubitv.com",
     "https://pluto.tv",
+    "https://einthusan.tv",
   ]) {
     assert.strictEqual(originAllowed(o), true, o);
   }
