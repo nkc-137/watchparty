@@ -14,10 +14,10 @@ import { ContentInfo, StoredConfig, SyncState } from "./protocol";
 const FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com|pluto\.tv|einthusan\./;
 
 /**
- * How far out of sync a follower tolerates before correcting. A tight
- * threshold keeps Netflix and YouTube crisp; the fragile HTML5 players would
- * seek (and re-buffer) constantly at that tolerance, which looks far worse than
- * being a second or two off.
+ * How far out of sync a follower tolerates before *seeking*. Drift below this
+ * is not ignored: it is closed with a small playback-rate nudge (see
+ * correctionRate), which costs no re-buffer. The fragile HTML5 players get a
+ * wider seek threshold because a seek there is a visible stall.
  */
 export function driftToleranceFor(hostname: string): number {
   return FRAGILE_HTML5.test(hostname) ? 2.5 : 1;
@@ -137,4 +137,73 @@ export function stallDetector(graceMs = STALL_GRACE_MS) {
       since = null;
     },
   };
+}
+
+// --- Clock sync -----------------------------------------------------------------
+
+/**
+ * Estimates the offset between this machine's clock and the server's, NTP-style.
+ *
+ * Every `at` on the wire is a wall-clock timestamp that a *different* machine
+ * projects from, so any skew between two laptops' clocks lands directly in the
+ * sync error — a host whose clock runs a second fast makes every follower trail
+ * by a second. Converting all timestamps to server time removes that, and it
+ * also makes them consistent with the `at`s the server stamps itself.
+ *
+ * Each ping gives `offset = server - midpoint(send, receive)`, accurate to ±RTT/2.
+ * The sample with the lowest RTT is the least distorted by queueing, so we keep
+ * a short window and trust the fastest one.
+ */
+export function clockSync(window = 8) {
+  const samples: { rtt: number; offset: number }[] = [];
+  let best = 0;
+  return {
+    /** Record one ping: local send time, server's reply time, local receive time. */
+    add(sentAt: number, serverTime: number, receivedAt: number) {
+      const rtt = receivedAt - sentAt;
+      if (!(rtt >= 0) || !isFinite(serverTime)) return;
+      samples.push({ rtt, offset: serverTime - (sentAt + receivedAt) / 2 });
+      if (samples.length > window) samples.shift();
+      best = samples.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset;
+    },
+    /** server time ≈ local time + offset(). 0 until the first sample. */
+    offset: () => best,
+    /** Current server time, by this machine's estimate. */
+    now: (local = Date.now()) => local + best,
+    reset() {
+      samples.length = 0;
+      best = 0;
+    },
+  };
+}
+
+// --- Soft drift correction ----------------------------------------------------
+
+/** Below this, drift is noise (sample jitter, half-RTT error) — leave it alone. */
+export const RATE_DEADBAND_SEC = 0.15;
+/** Once correcting, keep going until this close, so we don't hover at the edge. */
+export const RATE_SETTLE_SEC = 0.05;
+/** How far playback speed may be nudged. ±10% is hard to notice with pitch kept. */
+export const RATE_MAX_DELTA = 0.1;
+/** Aim to close the gap over roughly this many seconds. */
+const RATE_HORIZON_SEC = 3;
+
+/**
+ * Playback rate that closes a small drift smoothly instead of seeking.
+ *
+ * Seeking costs a re-buffer, which on the fragile HTML5 players is most of a
+ * second and itself lands you *behind* — so seeking can't buy anything finer than
+ * about a second. Speeding up or slowing down slightly can: it converges to
+ * within a frame or two without a visible hitch. Seeks stay for big jumps only.
+ *
+ * `drift` is local minus target, in seconds (positive = we're ahead).
+ * `correcting` is whether the last call returned something other than 1, for
+ * hysteresis.
+ */
+export function correctionRate(drift: number, correcting: boolean): number {
+  const abs = Math.abs(drift);
+  if (abs < (correcting ? RATE_SETTLE_SEC : RATE_DEADBAND_SEC)) return 1;
+  const delta = Math.min(RATE_MAX_DELTA, abs / RATE_HORIZON_SEC);
+  // Round to 0.01 so tiny wobbles don't spam the player with rate changes.
+  return Math.round((drift > 0 ? 1 - delta : 1 + delta) * 100) / 100;
 }

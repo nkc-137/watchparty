@@ -28,6 +28,12 @@ function post(msg: FromPage) {
 // When we apply a remote command we must not echo it back as a local event.
 // A short suppression window after each self-initiated seek/play/pause does that.
 let suppressUntil = 0;
+
+// Drift-correction speed the content script asked for. Re-applied on every
+// sample while active, because sites swap <video> elements (next episode, ad
+// breaks) and some reset playbackRate themselves. At 1 we leave the element
+// alone, so a speed the viewer picked by hand is not overridden.
+let desiredRate = 1;
 function suppress(ms = 700) {
   suppressUntil = Date.now() + ms;
 }
@@ -74,6 +80,11 @@ window.addEventListener("message", (ev) => {
   const data = ev.data as ToPage;
   if (!data || data.ns !== NS || data.dir !== "toPage") return;
   if (!adapter || !adapter.available()) return;
+  if (data.kind === "rate") {
+    desiredRate = data.rate;
+    adapter.setRate?.(desiredRate);
+    return;
+  }
   const cmd = data as ApplyMsg;
   if (cmd.action === "seek") requestSeek(cmd.position);
   else if (cmd.action === "play") {
@@ -90,6 +101,7 @@ window.addEventListener("message", (ev) => {
 // --- Detecting local playback changes ----------------------------------------
 let lastPaused: boolean | null = null;
 let lastTime = 0; // seconds
+let lastSampleAt = Date.now();
 let ready = false;
 
 function sample() {
@@ -105,6 +117,8 @@ function sample() {
     post({ ns: NS, dir: "fromPage", kind: "ready", ready: true });
   }
 
+  if (desiredRate !== 1) adapter.setRate?.(desiredRate);
+
   const time = adapter.getTime(); // seconds
   const paused = adapter.isPaused();
   const content = readContent();
@@ -113,11 +127,12 @@ function sample() {
   const suppressed = now < suppressUntil;
 
   // Detect a manual seek: playback position jumped more than playback+tick
-  // would explain (~0.6s of real time between 500ms samples).
+  // would explain. Measured against real elapsed time (timers get throttled in
+  // background tabs) and allowing for a rate nudge of up to ~10%.
   const drift = Math.abs(time - lastTime);
-  const expected = paused ? 0 : 0.8;
+  const expected = paused ? 0 : ((now - lastSampleAt) / 1000) * 1.15 + 0.3;
   if (!suppressed && lastPaused !== null && drift > 1.5 + expected) {
-    post({ ns: NS, dir: "fromPage", kind: "playback", action: "seek", position: time, content });
+    post({ ns: NS, dir: "fromPage", kind: "playback", action: "seek", position: time, content, sampledAt: now });
   }
 
   // Detect play/pause transitions.
@@ -129,6 +144,7 @@ function sample() {
       action: paused ? "pause" : "play",
       position: time,
       content,
+      sampledAt: now,
     });
   }
 
@@ -141,10 +157,12 @@ function sample() {
     playing: !paused,
     content,
     buffering,
+    sampledAt: now,
   });
 
   lastPaused = paused;
   lastTime = time;
+  lastSampleAt = now;
 }
 
-if (adapter) setInterval(sample, 500);
+if (adapter) setInterval(sample, 250);

@@ -10,7 +10,7 @@
  */
 import { PlayerAdapter } from "./types";
 import { cleanTitle } from "./identity";
-import { contentVideo, videoBuffering } from "./media";
+import { contentVideo, setVideoRate, videoBuffering } from "./media";
 
 export interface HtmlVideoTuning {
   name: string;
@@ -44,6 +44,7 @@ export function htmlVideoAdapter(t: HtmlVideoTuning): PlayerAdapter {
     },
     pause: () => contentVideo()?.pause(),
     isBuffering: videoBuffering,
+    setRate: setVideoRate,
     contentId: () => t.contentId?.() ?? null,
     title: cleanTitle,
   };

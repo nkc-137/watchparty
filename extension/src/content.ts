@@ -7,7 +7,7 @@
  *  - as host, broadcasts periodic drift-correction state.
  */
 import { io, Socket } from "socket.io-client";
-import { NS, FromPage, ApplyMsg } from "./bridge";
+import { NS, FromPage, ToPage } from "./bridge";
 import {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -15,10 +15,13 @@ import {
   StoredConfig,
   ContentInfo,
   Member,
+  SyncState,
 } from "./protocol";
 import { mountChat, ChatUI } from "./chat";
 import {
+  clockSync,
   connSig,
+  correctionRate,
   driftToleranceFor,
   isWatchPage,
   planSync,
@@ -36,11 +39,67 @@ let isHost = false;
 const DRIFT_TOLERANCE_SEC = driftToleranceFor(location.hostname);
 
 // Latest known local player state (fed by the page's periodic samples).
-let local: { position: number; playing: boolean; content: ContentInfo | null } = {
+// `sampledAt` is local wall-clock ms when `position` was read.
+let local: {
+  position: number;
+  playing: boolean;
+  content: ContentInfo | null;
+  sampledAt: number;
+} = {
   position: 0,
   playing: false,
   content: null,
+  sampledAt: Date.now(),
 };
+
+// Local-to-server clock offset. Every `at` we send is in server time, and every
+// `at` we receive is projected against server time, so two members' clocks
+// disagreeing no longer shows up as sync error.
+const clock = clockSync();
+
+/** A local sample's timestamp, in server time. */
+const sampleAt = () => clock.now(local.sampledAt);
+
+// Where the room should be: the latest authoritative state, kept between host
+// heartbeats so the follower can steer toward it on every local sample.
+let target: SyncState | null = null;
+// Whether the room is parked waiting on someone to buffer.
+let holding = false;
+
+// Playback speed we last asked the page for (1 = not correcting).
+let currentRate = 1;
+function setRate(rate: number) {
+  if (rate === currentRate) return;
+  currentRate = rate;
+  toPage({ ns: NS, dir: "toPage", kind: "rate", rate });
+}
+
+/**
+ * Follower-side fine sync. Seeks handle big jumps (see the syncState handler);
+ * everything under the seek threshold is closed by nudging playback speed,
+ * which converges without a re-buffer.
+ */
+function steer(buffering: boolean) {
+  const canSteer =
+    !isHost &&
+    !holding &&
+    !buffering &&
+    target?.playing &&
+    local.playing &&
+    socket?.connected &&
+    Date.now() >= applyingUntil;
+  if (!canSteer || !target) {
+    setRate(1);
+    return;
+  }
+  const drift = local.position - projected(target, sampleAt());
+  // Past the seek threshold a seek is on its way; don't fight it with speed.
+  if (Math.abs(drift) > DRIFT_TOLERANCE_SEC) {
+    setRate(1);
+    return;
+  }
+  setRate(correctionRate(drift, currentRate !== 1));
+}
 
 // Latest member list.
 let members: Member[] = [];
@@ -70,7 +129,7 @@ function publishContent(next: ContentInfo | null) {
 // events. The page also self-suppresses; this is belt-and-suspenders.
 let applyingUntil = 0;
 
-function toPage(msg: ApplyMsg) {
+function toPage(msg: ToPage) {
   window.postMessage(msg, "*");
 }
 
@@ -87,17 +146,20 @@ window.addEventListener("message", (ev) => {
   if (data.kind === "state") {
     local.position = data.position;
     local.playing = data.playing;
+    local.sampledAt = data.sampledAt;
     publishContent(data.content);
     publishReady(data.buffering);
+    steer(data.buffering);
     return;
   }
   if (data.kind === "playback") {
     if (Date.now() < applyingUntil) return; // don't echo applied commands
     local.position = data.position;
+    local.sampledAt = data.sampledAt;
     socket?.emit("playbackEvent", {
       action: data.action,
       position: data.position,
-      at: Date.now(),
+      at: sampleAt(),
       content: data.content,
     });
   }
@@ -137,8 +199,12 @@ function connect(cfg: StoredConfig) {
     reconnection: true,
   });
   socket = s;
+  clock.reset();
 
   s.on("connect", () => {
+    // A quick burst so the clock offset is good within a second or two,
+    // rather than waiting on the slow latency-badge probe.
+    for (let i = 0; i < 5; i++) setTimeout(probe, i * 250);
     s.emit(
       "joinRoom",
       { roomCode: cfg.roomCode, name: cfg.name, secret: cfg.secret },
@@ -159,7 +225,8 @@ function connect(cfg: StoredConfig) {
         if (!localReady) s.emit("setReady", false);
         // Catch a late joiner up to the room's current position.
         if (res.state) {
-          apply(res.state.playing ? "play" : "pause", projected(res.state));
+          target = res.state;
+          apply(res.state.playing ? "play" : "pause", projected(res.state, clock.now()));
         }
       }
     );
@@ -171,12 +238,23 @@ function connect(cfg: StoredConfig) {
   });
 
   s.on("playbackEvent", (e) => {
-    apply(e.action, e.position);
+    // The event spent time on the wire; if the room is (still) playing, the
+    // sender has moved on since. A seek keeps whatever play state we're in.
+    const playing = e.action === "play" || (e.action === "seek" && local.playing);
+    const ev: SyncState = { position: e.position, playing, at: e.at };
+    target = ev;
+    apply(e.action, projected(ev, clock.now()));
   });
 
   s.on("syncState", (state) => {
     if (isHost) return; // host is the authority; ignore its own echoes
-    const plan = planSync(local, state, DRIFT_TOLERANCE_SEC);
+    target = state;
+    const plan = planSync(
+      { position: local.position, playing: local.playing },
+      state,
+      DRIFT_TOLERANCE_SEC,
+      sampleAt()
+    );
     if (plan.seek) apply("seek", plan.position);
     if (plan.setPlaying !== null) apply(plan.setPlaying ? "play" : "pause", plan.position);
   });
@@ -190,6 +268,7 @@ function connect(cfg: StoredConfig) {
 
   s.on("hostChanged", (hostId) => {
     isHost = hostId === s.id;
+    if (isHost) setRate(1); // the host is the reference; it never steers
     ui?.setStatus(statusText());
   });
 
@@ -197,11 +276,15 @@ function connect(cfg: StoredConfig) {
   // we just obey and explain it. apply() suppresses the echo, so our own pause
   // is not reported back as a user action.
   s.on("hold", (state) => {
+    holding = true;
+    target = { position: state.position, playing: false, at: clock.now() };
     ui?.setHold(state.waiting);
     apply("pause", state.position);
   });
 
   s.on("holdRelease", (release) => {
+    holding = false;
+    target = { position: release.position, playing: release.play, at: clock.now() };
     ui?.setHold(null);
     if (release.play) apply("play", release.position);
   });
@@ -216,13 +299,29 @@ function connect(cfg: StoredConfig) {
 
   // Host was asked to resync everyone: emit a fresh authoritative state.
   s.on("syncRequested", () => {
-    if (!isHost) return;
-    s.emit("syncState", {
-      position: local.position,
-      playing: local.playing,
-      at: Date.now(),
-      content: local.content,
-    });
+    if (isHost) broadcastState();
+  });
+}
+
+/** Host: send our authoritative position, stamped with when it was read. */
+function broadcastState() {
+  socket?.emit("syncState", {
+    position: local.position,
+    playing: local.playing,
+    at: sampleAt(),
+    content: local.content,
+  });
+}
+
+/** One ping: feeds the clock offset and the latency badge. */
+function probe() {
+  const s = socket;
+  if (!s?.connected) return;
+  const t0 = Date.now();
+  s.emit("ping", (serverTime) => {
+    const t1 = Date.now();
+    clock.add(t0, serverTime, t1);
+    ui?.setLatency(t1 - t0);
   });
 }
 
@@ -241,30 +340,25 @@ function teardown() {
   disconnect();
   members = [];
   localReady = true;
+  target = null;
+  holding = false;
+  setRate(1);
   stall.reset();
   document.getElementById("wp-root")?.remove();
   ui = null;
 }
 
-// Host broadcasts its authoritative state a few times a second's worth apart.
+// Host heartbeat. Followers project between beats, but the host's own player
+// doesn't advance at exactly wall-clock speed (micro-stalls, frame drops), so
+// a frequent beat keeps the target honest. One tiny message a second.
 setInterval(() => {
-  if (!socket?.connected || !isHost) return;
-  socket.emit("syncState", {
-    position: local.position,
-    playing: local.playing,
-    at: Date.now(),
-    content: local.content,
-  });
-}, 3000);
+  if (socket?.connected && isHost) broadcastState();
+}, 1000);
 
-// Round-trip latency probe → overlay badge.
+// Latency badge + clock-offset refresh.
 setInterval(() => {
-  if (!socket?.connected) {
-    ui?.setLatency(null);
-    return;
-  }
-  const t0 = Date.now();
-  socket.emit("ping", () => ui?.setLatency(Date.now() - t0));
+  if (!socket?.connected) ui?.setLatency(null);
+  else probe();
 }, 5000);
 
 // --- Config + SPA-navigation wiring ------------------------------------------

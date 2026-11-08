@@ -5,6 +5,7 @@
  */
 import { PlayerAdapter } from "./types";
 import { cleanTitle, idFromUrl } from "./identity";
+import { setVideoRate } from "./media";
 
 interface YTPlayer {
   getCurrentTime(): number; // seconds
@@ -40,6 +41,8 @@ export const youtubeAdapter: PlayerAdapter = {
   // State 3 is YouTube's own "buffering", which is more reliable here than the
   // underlying element.
   isBuffering: () => player()?.getPlayerState() === 3,
+  // The element, not setPlaybackRate(): the API snaps to its menu steps.
+  setRate: setVideoRate,
   play: () => player()?.playVideo(),
   pause: () => player()?.pauseVideo(),
   // The 11-character id in ?v= (or a youtu.be / shorts path).

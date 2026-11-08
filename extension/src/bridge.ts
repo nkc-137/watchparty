@@ -18,6 +18,8 @@ export interface LocalPlaybackMsg {
   action: PlaybackAction;
   position: number; // seconds
   content: ContentInfo | null;
+  /** Local wall-clock time (ms) `position` was read at. */
+  sampledAt: number;
 }
 
 /** inject -> content: periodic state sample (for host drift broadcasts). */
@@ -30,6 +32,8 @@ export interface LocalStateMsg {
   content: ContentInfo | null;
   /** True while the player can't keep playing — see PlayerAdapter.isBuffering. */
   buffering: boolean;
+  /** Local wall-clock time (ms) `position` was read at. */
+  sampledAt: number;
 }
 
 /** inject -> content: player readiness. */
@@ -49,5 +53,13 @@ export interface ApplyMsg {
   position: number;
 }
 
+/** content -> inject: nudge playback speed to close a small drift. */
+export interface RateMsg {
+  ns: typeof NS;
+  dir: "toPage";
+  kind: "rate";
+  rate: number;
+}
+
 export type FromPage = LocalPlaybackMsg | LocalStateMsg | ReadyMsg;
-export type ToPage = ApplyMsg;
+export type ToPage = ApplyMsg | RateMsg;

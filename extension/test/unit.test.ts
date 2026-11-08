@@ -10,7 +10,9 @@
  */
 import assert from "assert";
 import {
+  clockSync,
   connSig,
+  correctionRate,
   driftToleranceFor,
   isWatchPage,
   planSync,
@@ -46,6 +48,54 @@ const cfg = (over: Partial<StoredConfig> = {}): StoredConfig => ({
   secret: "shh",
   connected: true,
   ...over,
+});
+
+// ---- clockSync --------------------------------------------------------------
+
+test("clockSync recovers the offset from a symmetric round trip", () => {
+  const c = clockSync();
+  // Server is 2s ahead; 100ms each way.
+  c.add(T0, T0 + 2000 + 100, T0 + 200);
+  assert.strictEqual(c.offset(), 2000);
+  assert.strictEqual(c.now(T0), T0 + 2000);
+});
+
+test("clockSync trusts the fastest round trip", () => {
+  const c = clockSync();
+  c.add(T0, T0 + 2000 + 900, T0 + 1000); // slow, asymmetric: offset reads 2400
+  c.add(T0, T0 + 2000 + 50, T0 + 100); // fast: offset 2000
+  c.add(T0, T0 + 2000 + 10, T0 + 600); // slow again: offset 1710
+  assert.strictEqual(c.offset(), 2000);
+});
+
+test("clockSync is zero until it has a sample, and after reset", () => {
+  const c = clockSync();
+  assert.strictEqual(c.offset(), 0);
+  c.add(T0, T0 + 500, T0);
+  c.reset();
+  assert.strictEqual(c.offset(), 0);
+});
+
+// ---- correctionRate ---------------------------------------------------------
+
+test("correctionRate leaves sub-deadband drift alone", () => {
+  assert.strictEqual(correctionRate(0.1, false), 1);
+  assert.strictEqual(correctionRate(-0.1, false), 1);
+});
+
+test("correctionRate speeds up when behind and slows down when ahead", () => {
+  assert.ok(correctionRate(-0.5, false) > 1);
+  assert.ok(correctionRate(0.5, false) < 1);
+});
+
+test("correctionRate is capped", () => {
+  assert.strictEqual(correctionRate(-2, false), 1.1);
+  assert.strictEqual(correctionRate(2, false), 0.9);
+});
+
+test("correctionRate keeps correcting inside the deadband until settled", () => {
+  assert.notStrictEqual(correctionRate(-0.1, true), 1);
+  assert.strictEqual(correctionRate(-0.03, true), 1);
 });
 
 // ---- projected --------------------------------------------------------------

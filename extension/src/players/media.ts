@@ -45,3 +45,15 @@ export function videoBuffering(): boolean {
   if (!v) return false; // no player yet — "not buffering", not "stalled"
   return v.seeking || v.readyState < 3; // 3 = HAVE_FUTURE_DATA
 }
+
+/**
+ * Set the content video's playback speed, keeping pitch so a ±10% nudge
+ * doesn't make voices sound off. Works under every site's own player API here,
+ * since they all drive a plain <video>.
+ */
+export function setVideoRate(rate: number): void {
+  const v = contentVideo();
+  if (!v) return;
+  v.preservesPitch = true;
+  if (Math.abs(v.playbackRate - rate) > 0.001) v.playbackRate = rate;
+}

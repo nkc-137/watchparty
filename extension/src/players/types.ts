@@ -41,6 +41,12 @@ export interface PlayerAdapter {
    */
   isBuffering?(): boolean;
 
+  /**
+   * Set playback speed, used to close small drifts without a seek. Optional:
+   * without it a follower falls back to seek-only correction.
+   */
+  setRate?(rate: number): void;
+
   // --- Optional robustness tuning (defaults keep Netflix's original behavior) ---
 
   /**
