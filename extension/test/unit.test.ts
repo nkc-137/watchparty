@@ -18,6 +18,7 @@ import {
   planSync,
   projected,
   sameContent,
+  seqGate,
   stallDetector,
 } from "../src/sync";
 import { cleanTitle, idFromUrl } from "../src/players/identity";
@@ -322,6 +323,46 @@ test("stallDetector.reset forgets a stall in progress", () => {
   s.ready(true, 0);
   s.reset();
   assert.strictEqual(s.ready(true, 1500), true);
+});
+
+test("seqGate: a host lagging a relayed seek stamps the old seq until it catches up", () => {
+  const g = seqGate(5000);
+  g.reset(3);
+  g.received(4, 0);
+  assert.strictEqual(g.behind(), true);
+  assert.strictEqual(g.stamp(1000), 3);
+  g.caughtUp();
+  assert.strictEqual(g.behind(), false);
+  assert.strictEqual(g.stamp(1500), 4);
+});
+
+test("seqGate: a host that never visibly catches up is trusted again after the timeout", () => {
+  const g = seqGate(5000);
+  g.received(1, 0);
+  assert.strictEqual(g.stamp(4999), 0);
+  assert.strictEqual(g.stamp(5000), 1);
+});
+
+test("seqGate: our own event counts as caught up the moment it is acked", () => {
+  const g = seqGate();
+  g.received(1, 0); // still applying someone else's seek…
+  g.sent(); // …when we seek ourselves
+  g.acked(2);
+  assert.strictEqual(g.behind(), false);
+  assert.strictEqual(g.stamp(0), 2);
+});
+
+test("seqGate: a follower ignores beats older than the latest event, and all beats while unacked", () => {
+  const g = seqGate();
+  g.received(2, 0);
+  assert.strictEqual(g.accepts({ seq: 1 }), false);
+  assert.strictEqual(g.accepts({ seq: 2 }), true);
+  assert.strictEqual(g.accepts({}), true); // older host without seqs
+  g.sent();
+  assert.strictEqual(g.accepts({ seq: 2 }), false); // relayed before our rewind landed
+  g.acked(3);
+  assert.strictEqual(g.accepts({ seq: 2 }), false);
+  assert.strictEqual(g.accepts({ seq: 3 }), true);
 });
 
 // ---- runner -----------------------------------------------------------------

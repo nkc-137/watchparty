@@ -27,6 +27,7 @@ import {
   planSync,
   projected,
   sameContent,
+  seqGate,
   stallDetector,
 } from "./sync";
 
@@ -65,6 +66,20 @@ const sampleAt = () => clock.now(local.sampledAt);
 let target: SyncState | null = null;
 // Whether the room is parked waiting on someone to buffer.
 let holding = false;
+// Orders host heartbeats against playback events, so a stale beat can't undo a seek.
+const seqs = seqGate();
+
+/**
+ * Host: once our player has actually reached the latest relayed event's
+ * target, our heartbeats describe the room again. Until then they describe
+ * where it *was*, and the server would (rightly) drop them.
+ */
+function noteCaughtUp() {
+  if (!isHost || !seqs.behind() || !target || Date.now() < applyingUntil) return;
+  if (local.playing !== target.playing) return;
+  if (Math.abs(local.position - projected(target, sampleAt())) > DRIFT_TOLERANCE_SEC) return;
+  seqs.caughtUp();
+}
 
 // Playback speed we last asked the page for (1 = not correcting).
 let currentRate = 1;
@@ -149,6 +164,7 @@ window.addEventListener("message", (ev) => {
     local.sampledAt = data.sampledAt;
     publishContent(data.content);
     publishReady(data.buffering);
+    noteCaughtUp();
     steer(data.buffering);
     return;
   }
@@ -156,12 +172,18 @@ window.addEventListener("message", (ev) => {
     if (Date.now() < applyingUntil) return; // don't echo applied commands
     local.position = data.position;
     local.sampledAt = data.sampledAt;
-    socket?.emit("playbackEvent", {
-      action: data.action,
-      position: data.position,
-      at: sampleAt(),
-      content: data.content,
-    });
+    const at = sampleAt();
+    // We are where the room is going now; steer toward it, not the old target.
+    const playing = data.action === "play" || (data.action === "seek" && local.playing);
+    target = { position: data.position, playing, at };
+    const s = socket;
+    if (!s?.connected) return;
+    seqs.sent();
+    s.emit(
+      "playbackEvent",
+      { action: data.action, position: data.position, at, content: data.content },
+      (seq) => seqs.acked(seq)
+    );
   }
 });
 
@@ -216,6 +238,7 @@ function connect(cfg: StoredConfig) {
         }
         isHost = res.youAreHost;
         members = res.members;
+        seqs.reset(res.seq ?? 0);
         ui?.setMembers(members);
         // Catch up on what was said before we arrived.
         if (res.history?.length) ui?.addHistory(res.history);
@@ -243,11 +266,14 @@ function connect(cfg: StoredConfig) {
     const playing = e.action === "play" || (e.action === "seek" && local.playing);
     const ev: SyncState = { position: e.position, playing, at: e.at };
     target = ev;
+    if (typeof e.seq === "number") seqs.received(e.seq);
     apply(e.action, projected(ev, clock.now()));
   });
 
   s.on("syncState", (state) => {
     if (isHost) return; // host is the authority; ignore its own echoes
+    // Sampled before the latest seek/play/pause took effect (ours included).
+    if (!seqs.accepts(state)) return;
     target = state;
     const plan = planSync(
       { position: local.position, playing: local.playing },
@@ -268,7 +294,10 @@ function connect(cfg: StoredConfig) {
 
   s.on("hostChanged", (hostId) => {
     isHost = hostId === s.id;
-    if (isHost) setRate(1); // the host is the reference; it never steers
+    if (isHost) {
+      setRate(1); // the host is the reference; it never steers
+      seqs.caughtUp(); // and whatever our player shows is now the room's truth
+    }
     ui?.setStatus(statusText());
   });
 
@@ -310,6 +339,7 @@ function broadcastState() {
     playing: local.playing,
     at: sampleAt(),
     content: local.content,
+    seq: seqs.stamp(),
   });
 }
 
@@ -344,6 +374,7 @@ function teardown() {
   holding = false;
   setRate(1);
   stall.reset();
+  seqs.reset();
   document.getElementById("wp-root")?.remove();
   ui = null;
 }

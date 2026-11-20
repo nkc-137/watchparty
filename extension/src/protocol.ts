@@ -27,6 +27,14 @@ export interface SyncState {
   playing: boolean;
   at: number;
   content?: ContentInfo | null;
+  /**
+   * The last playback event (by server-assigned seq) the host's player had
+   * caught up with when this was sampled. The server drops states older than
+   * the room's latest event: a heartbeat sampled before the host's player
+   * finished applying someone's seek would otherwise yank everyone back.
+   * Absent from older clients, which are trusted as before.
+   */
+  seq?: number;
 }
 
 /**
@@ -82,6 +90,8 @@ export interface JoinRoomResult {
   /** Recent chat so a late joiner doesn't land in an empty panel. */
   history?: ChatMessage[];
   state?: SyncState | null;
+  /** The room's latest playback-event seq (see SyncState.seq). */
+  seq?: number;
 }
 
 export interface Reaction {
@@ -102,7 +112,8 @@ export interface ClientToServerEvents {
     ack: (result: JoinRoomResult) => void
   ) => void;
   leaveRoom: () => void;
-  playbackEvent: (event: PlaybackEvent) => void;
+  /** Acked with the seq the server gave the event. */
+  playbackEvent: (event: PlaybackEvent, ack?: (seq: number) => void) => void;
   syncState: (state: SyncState) => void;
   chatMessage: (text: string) => void;
   reaction: (emoji: string) => void;
@@ -115,7 +126,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
-  playbackEvent: (event: PlaybackEvent & { from: string }) => void;
+  playbackEvent: (event: PlaybackEvent & { from: string; seq: number }) => void;
   syncState: (state: SyncState) => void;
   chatMessage: (msg: ChatMessage) => void;
   members: (members: Member[]) => void;

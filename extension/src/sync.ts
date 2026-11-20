@@ -139,6 +139,77 @@ export function stallDetector(graceMs = STALL_GRACE_MS) {
   };
 }
 
+// --- Playback-event ordering ----------------------------------------------------
+
+/** How long the host may lag a playback event before its beats are trusted anyway. */
+export const CATCH_UP_TIMEOUT_MS = 5000;
+
+/**
+ * Keeps host heartbeats from undoing a seek.
+ *
+ * The server numbers every playback event (seq). A heartbeat is only
+ * meaningful if the host's player had already applied the latest one when it
+ * was sampled. On Prime a seek is throttled and slow, so for a second or two
+ * after someone rewinds, the host is still reporting the *old* position — and
+ * a follower obeying that is dragged straight back. This tracks:
+ *  - as host: the seq our player has caught up with, to stamp on heartbeats;
+ *  - as anyone: whether an incoming heartbeat predates what we know of.
+ */
+export function seqGate(timeoutMs = CATCH_UP_TIMEOUT_MS) {
+  let room = 0; // latest seq we know the room has reached
+  let synced = 0; // latest seq our own player reflects
+  let pending = 0; // our own events the server hasn't acked yet
+  let behindSince: number | null = null;
+  return {
+    /** We emitted a playback event; its seq arrives with the ack. */
+    sent() {
+      pending++;
+    },
+    /** The server numbered our own event. Our player is already there. */
+    acked(seq: number) {
+      pending = Math.max(0, pending - 1);
+      room = Math.max(room, seq);
+      synced = Math.max(synced, seq);
+      if (synced >= room) behindSince = null;
+    },
+    /** Someone else's event arrived; our player now has to catch up. */
+    received(seq: number, now = Date.now()) {
+      if (seq <= room) return;
+      room = seq;
+      behindSince = now;
+    },
+    /** Our player has reached the latest event's target. */
+    caughtUp() {
+      synced = room;
+      behindSince = null;
+    },
+    /** Whether our player still has a received event to catch up with. */
+    behind: () => synced < room,
+    /**
+     * The seq to stamp on a host heartbeat. If the player never visibly
+     * catches up (a seek that silently failed), give up waiting after a
+     * timeout rather than leave the room with no heartbeats at all.
+     */
+    stamp(now = Date.now()): number {
+      if (behindSince !== null && now - behindSince >= timeoutMs) this.caughtUp();
+      return synced;
+    },
+    /** Whether to act on an incoming heartbeat. */
+    accepts(state: { seq?: number }): boolean {
+      // Anything relayed before our own event reached the server is stale,
+      // and the ack is what tells us everything before it has been delivered.
+      if (pending > 0) return false;
+      return typeof state.seq !== "number" || state.seq >= room;
+    },
+    /** Start over from the room's current seq (on join). */
+    reset(seq = 0) {
+      room = synced = seq;
+      pending = 0;
+      behindSince = null;
+    },
+  };
+}
+
 // --- Clock sync -----------------------------------------------------------------
 
 /**

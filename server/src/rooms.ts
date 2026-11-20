@@ -24,6 +24,8 @@ export interface Room {
   members: Map<string, RoomMember>; // socketId -> member
   hostId: string | null;
   lastState: SyncState | null;
+  /** Bumped on every playback event; see SyncState.seq. */
+  seq: number;
   /** Non-null while the room is paused waiting for someone to buffer. */
   hold: Hold | null;
   /** Recent chat, newest last, capped at MAX_HISTORY. */
@@ -46,6 +48,7 @@ export class RoomRegistry {
         members: new Map(),
         hostId: null,
         lastState: null,
+        seq: 0,
         hold: null,
         messages: [],
       };

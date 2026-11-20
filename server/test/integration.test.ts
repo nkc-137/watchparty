@@ -244,6 +244,52 @@ test("syncState from host relays; from non-host is ignored", async () => {
   cleanup();
 });
 
+test("a host beat sampled before a peer's seek landed is dropped, not relayed", async () => {
+  const host = await connect();
+  const peer = await connect();
+  const j = await join(host, { roomCode: "r7s", name: "host" });
+  await join(peer, { roomCode: "r7s", name: "peer" });
+  assert.strictEqual(j.seq, 0);
+
+  // The peer rewinds; the server numbers it and acks the number.
+  const hostSees = waitFor(host, "playbackEvent");
+  const seq: number = await new Promise((resolve) =>
+    peer.emit("playbackEvent", { action: "seek", position: 70, at: Date.now() }, resolve)
+  );
+  assert.strictEqual(seq, 1);
+  assert.strictEqual((await hostSees).seq, 1);
+
+  // A beat from before the host's player caught up would yank the peer back.
+  const noRelay = expectNo(peer, "syncState");
+  host.emit("syncState", { position: 100, playing: true, at: Date.now(), seq: 0 });
+  await noRelay;
+
+  // Once caught up, beats flow again.
+  const relayed = waitFor(peer, "syncState");
+  host.emit("syncState", { position: 70.5, playing: true, at: Date.now(), seq: 1 });
+  assert.strictEqual((await relayed).position, 70.5);
+
+  // And a late joiner starts from the room's seq, not from zero.
+  const late = await connect();
+  const lj = await join(late, { roomCode: "r7s", name: "late" });
+  assert.strictEqual(lj.seq, 1);
+  assert.strictEqual(lj.state?.position, 70.5);
+  cleanup();
+});
+
+test("beats without a seq (older clients) are still trusted", async () => {
+  const host = await connect();
+  const peer = await connect();
+  await join(host, { roomCode: "r7o", name: "host" });
+  await join(peer, { roomCode: "r7o", name: "peer" });
+  peer.emit("playbackEvent", { action: "seek", position: 70, at: Date.now() });
+  await waitFor(host, "playbackEvent");
+  const relayed = waitFor(peer, "syncState");
+  host.emit("syncState", { position: 71, playing: true, at: Date.now() });
+  assert.strictEqual((await relayed).position, 71);
+  cleanup();
+});
+
 test("requestSync nudges host and returns last state to requester", async () => {
   const host = await connect();
   const peer = await connect();

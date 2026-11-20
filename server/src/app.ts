@@ -276,6 +276,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
         youAreHost: isHost,
         members,
         state: room.lastState,
+        seq: room.seq,
         history: [...room.messages],
       });
       io.to(roomCode).emit("members", members);
@@ -322,12 +323,19 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       refreshHold(room);
     });
 
-    socket.on("playbackEvent", (event) => {
+    socket.on("playbackEvent", (event, ack) => {
       if (!data.roomCode) return;
       // A seek storm is the most disruptive thing a member can do, so it is
       // limited alongside chat rather than trusted.
-      if (!withinLimit("playback")) return;
       const room = registry.get(data.roomCode);
+      // Refused events still ack (with the unchanged seq) so the sender stops
+      // waiting; the room never moved, so the host's next beat rightly wins.
+      if (!withinLimit("playback")) {
+        if (typeof ack === "function") ack(room?.seq ?? 0);
+        return;
+      }
+      const seq = room ? ++room.seq : 0;
+      if (typeof ack === "function") ack(seq);
       if (room) {
         // A play can't go out while anyone is still buffering — that is the
         // whole point of the gate. Hold instead, and play on release.
@@ -346,7 +354,7 @@ export function createApp(opts: AppOptions = {}): RunningApp {
           content: event.content ?? null,
         };
       }
-      socket.to(data.roomCode).emit("playbackEvent", { ...event, from: socket.id });
+      socket.to(data.roomCode).emit("playbackEvent", { ...event, from: socket.id, seq });
 
       const who = data.name || "someone";
       const verb =
@@ -364,6 +372,10 @@ export function createApp(opts: AppOptions = {}): RunningApp {
       if (room) {
         // Only the host is trusted as the drift authority.
         if (room.hostId !== socket.id) return;
+        // Sampled before the host's player caught up with the latest seek /
+        // play / pause: relaying it would drag everyone back to where the room
+        // just left. Dropping it costs nothing — the next beat is a second away.
+        if (typeof state.seq === "number" && state.seq < room.seq) return;
         room.lastState = state;
       }
       socket.to(data.roomCode).emit("syncState", state);
