@@ -1,13 +1,16 @@
 /**
- * Popup: collects server/room config, persists it to chrome.storage.local.
- * The content script watches that key and (dis)connects accordingly.
+ * Popup: collects server/room settings and saves them as preferences
+ * (chrome.storage.local). Joining binds the party to the tab the popup was
+ * opened over, through the background worker; only that tab connects.
  */
+import { callBackground } from "./messages";
+import { ConnParams } from "./party";
 import { StoredConfig } from "./protocol";
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
 const msg = () => document.getElementById("msg") as HTMLDivElement;
 
-function fields(): Omit<StoredConfig, "connected"> {
+function fields(): ConnParams {
   return {
     serverUrl: $("serverUrl").value.trim(),
     roomCode: $("roomCode").value.trim().toLowerCase(),
@@ -21,20 +24,44 @@ function applyEnabledUI(on: boolean) {
   document.body.classList.toggle("off", !on);
 }
 
-function restore() {
-  chrome.storage.local.get("wp", (r) => {
-    const cfg = r.wp as StoredConfig | undefined;
-    if (!cfg) return;
+async function restore() {
+  const cfg = (await chrome.storage.local.get("wp")).wp as StoredConfig | undefined;
+  if (cfg) {
     $("serverUrl").value = cfg.serverUrl || "";
     $("roomCode").value = cfg.roomCode || "";
     $("name").value = cfg.name || "";
     $("secret").value = cfg.secret || "";
     $("showPanel").checked = cfg.showPanel !== false; // default on
     $("enabled").checked = cfg.enabled !== false; // default on
-    applyEnabledUI(cfg.enabled !== false);
-    if (cfg.enabled === false) msg().textContent = "Extension is off.";
-    else if (cfg.connected) msg().textContent = `In room "${cfg.roomCode}".`;
-  });
+  }
+  const on = cfg?.enabled !== false;
+  applyEnabledUI(on);
+  if (!on) {
+    msg().textContent = "Extension is off.";
+    return;
+  }
+  try {
+    const { party } = await callBackground("wp:status", {});
+    if (party) msg().textContent = `In room "${party.roomCode}".`;
+  } catch {
+    // No status is fine; the form still works.
+  }
+}
+
+/** The tab the popup was opened over. */
+async function activeTabId(): Promise<number | undefined> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab?.id;
+}
+
+/** Remember the form for next time. Keeps the toggles; drops legacy fields. */
+function savePrefs(conn: ConnParams): Promise<void> {
+  const prefs: StoredConfig = {
+    ...conn,
+    enabled: $("enabled").checked,
+    showPanel: $("showPanel").checked,
+  };
+  return chrome.storage.local.set({ wp: prefs });
 }
 
 // The master switch. Off makes the content script tear down completely — the
@@ -63,21 +90,24 @@ $("showPanel").addEventListener("change", () => {
   });
 });
 
-document.getElementById("join")!.addEventListener("click", () => {
-  const f = fields();
-  if (!f.serverUrl || !f.roomCode) {
+document.getElementById("join")!.addEventListener("click", async () => {
+  const conn = fields();
+  if (!conn.serverUrl || !conn.roomCode) {
     msg().textContent = "Server URL and room code are required.";
     return;
   }
-  const cfg: StoredConfig = {
-    ...f,
-    connected: true,
-    enabled: $("enabled").checked,
-    showPanel: $("showPanel").checked,
-  };
-  chrome.storage.local.set({ wp: cfg }, () => {
-    msg().textContent = `Joining "${f.roomCode}"… (make sure a Netflix title is open)`;
-  });
+  const tabId = await activeTabId();
+  if (tabId === undefined) {
+    msg().textContent = "Couldn't find this tab.";
+    return;
+  }
+  try {
+    await savePrefs(conn);
+    await callBackground("wp:join", { tabId, conn });
+    msg().textContent = `Joining "${conn.roomCode}" in this tab…`;
+  } catch {
+    msg().textContent = "Couldn't join — try again.";
+  }
 });
 
 // --- Invite links ------------------------------------------------------------
@@ -126,13 +156,13 @@ document.getElementById("paste")!.addEventListener("click", async () => {
   }
 });
 
-document.getElementById("leave")!.addEventListener("click", () => {
-  chrome.storage.local.get("wp", (r) => {
-    const cfg = (r.wp as StoredConfig) || ({} as StoredConfig);
-    chrome.storage.local.set({ wp: { ...cfg, connected: false } }, () => {
-      msg().textContent = "Left the room.";
-    });
-  });
+document.getElementById("leave")!.addEventListener("click", async () => {
+  try {
+    await callBackground("wp:leave", {});
+    msg().textContent = "Left the room.";
+  } catch {
+    msg().textContent = "Couldn't leave — try again.";
+  }
 });
 
-restore();
+void restore();

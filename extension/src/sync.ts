@@ -2,13 +2,12 @@
  * Pure sync logic, deliberately free of DOM, chrome.* and socket access.
  *
  * This is the arithmetic and the decisions — where the host "really" is now,
- * whether we are far enough out to correct, whether a page is watchable, and
- * whether a config change is worth reconnecting for. Keeping it separate from
- * content.ts (which owns the socket, the overlay and the page bridge) is what
+ * whether we are far enough out to correct, and whether a page is watchable.
+ * Keeping it separate from content.ts (which owns the socket, the overlay and the page bridge) is what
  * makes it testable in plain Node; content.ts stays the thin layer that gathers
  * inputs and applies results.
  */
-import { ContentInfo, StoredConfig, SyncState } from "./protocol";
+import { ContentInfo, SyncState } from "./protocol";
 
 /** Sites whose HTML5 players re-buffer badly, so they get more slack. */
 const FRAGILE_HTML5 = /primevideo\.com|amazon\.|tubitv\.com|pluto\.tv|einthusan\./;
@@ -88,16 +87,6 @@ export function isWatchPage(
     return videoDurations.some((d) => isFinite(d) && d > 60);
   }
   return false;
-}
-
-/**
- * Connection-relevant config signature. Excludes display-only settings, so
- * toggling the overlay doesn't tear down a live connection mid-film.
- */
-export function connSig(c: StoredConfig | null): string {
-  return c
-    ? [c.enabled !== false, c.connected, c.serverUrl, c.roomCode, c.name, c.secret].join("|")
-    : "";
 }
 
 /** Whether two content descriptions are the same, nulls included. */

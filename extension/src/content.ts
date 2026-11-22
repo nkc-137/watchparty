@@ -1,6 +1,6 @@
 /**
  * ISOLATED-world content script. The hub of the client:
- *  - reads config from chrome.storage,
+ *  - connects only while this tab holds the party (see partyClient.ts),
  *  - opens the socket to the sync server,
  *  - bridges page playback events <-> server events,
  *  - drives the chat/member overlay,
@@ -18,9 +18,11 @@ import {
   SyncState,
 } from "./protocol";
 import { mountChat, ChatUI } from "./chat";
+import { isOurMessage, ContentApi, ContentRequest } from "./messages";
+import { ConnParams, connKey, desiredConnection } from "./party";
+import { followParty } from "./partyClient";
 import {
   clockSync,
-  connSig,
   correctionRate,
   driftToleranceFor,
   isWatchPage,
@@ -199,7 +201,7 @@ function statusText(): string {
   return isHost ? "connected · host" : "connected";
 }
 
-function connect(cfg: StoredConfig) {
+function connect(cfg: ConnParams) {
   disconnect();
   if (!ui) {
     ui = mountChat({
@@ -393,11 +395,22 @@ setInterval(() => {
 }, 5000);
 
 // --- Config + SPA-navigation wiring ------------------------------------------
-// The content script now loads on every Netflix page and survives Netflix's
-// client-side (single-page-app) navigation. We connect only while on a
-// /watch/ page with a "connected" config, and reconcile whenever either the
-// URL or the stored config changes — so no manual reload is needed.
-let cfgCache: StoredConfig | null = null;
+// The content script loads on every page of a supported site and survives
+// their client-side (single-page-app) navigation. Whether to be connected, and
+// to which room, is recomputed from three inputs whenever any of them changes:
+// the master switch, whether *this tab* holds the party, and whether a title
+// is open. Only a change in the resulting connection reconnects.
+
+// Local preferences: the master switch and the overlay toggle. Null until
+// read, and nothing connects before then — so a disabled extension never
+// briefly comes alive on page load.
+let prefs: StoredConfig | null = null;
+let prefsLoaded = false;
+
+// Identity of the connection we currently hold ("" for none).
+let activeKey = "";
+
+const party = followParty(reconcile);
 
 /** Gather the DOM inputs isWatchPage() needs. */
 function onWatchPage(): boolean {
@@ -407,50 +420,53 @@ function onWatchPage(): boolean {
 
 /** Master switch: off means fully dormant — no socket, no overlay, no events. */
 function isEnabled(): boolean {
-  return cfgCache?.enabled !== false; // default on
-}
-
-function shouldConnect(): boolean {
-  return !!(isEnabled() && cfgCache && cfgCache.connected && cfgCache.serverUrl && cfgCache.roomCode && onWatchPage());
+  return prefsLoaded && prefs?.enabled !== false; // default on, once known
 }
 
 /** Show/hide the whole overlay (launcher + panel) per the popup toggle. */
 function applyPanelVisibility() {
   const root = document.getElementById("wp-root");
-  if (root) root.style.display = cfgCache?.showPanel === false ? "none" : "";
+  if (root) root.style.display = prefs?.showPanel === false ? "none" : "";
 }
 
-/** Bring actual state in line with desired state. */
+/** Bring actual state in line with desired state. Idempotent, so cheap to poll. */
 function reconcile() {
-  if (shouldConnect()) {
-    if (!socket) connect(cfgCache!);
-  } else if (socket || ui) {
-    teardown();
-  }
+  const want = desiredConnection({
+    enabled: isEnabled(),
+    conn: party.current(),
+    onWatchPage: onWatchPage(),
+  });
+  const key = connKey(want);
+  if (key === activeKey) return;
+  activeKey = key;
+  // Leave the old room completely before joining another, so one tab is
+  // never a member twice.
+  teardown();
+  if (want) connect(want);
 }
 
 chrome.storage.local.get("wp", (r) => {
-  cfgCache = (r.wp as StoredConfig) || null;
+  prefs = (r.wp as StoredConfig) || null;
+  prefsLoaded = true;
   reconcile();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.wp) return;
-  const prevSig = connSig(cfgCache);
-  cfgCache = (changes.wp.newValue as StoredConfig) || null;
-
-  if (connSig(cfgCache) === prevSig) {
-    // Only the display toggle changed — don't disturb the live connection.
-    applyPanelVisibility();
-    return;
-  }
-  // A connection-relevant field changed: tear down so it reconnects cleanly.
-  teardown();
+  prefs = (changes.wp.newValue as StoredConfig) || null;
+  applyPanelVisibility(); // display-only; never reconnects
   reconcile();
+});
+
+// The popup asks whether this tab can host the party before binding it.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || !isOurMessage(msg)) return;
+  if ((msg as ContentRequest).type !== "wp:probe") return;
+  const reply: ContentApi["wp:probe"]["res"] = { onWatchPage: onWatchPage() };
+  sendResponse(reply);
 });
 
 // Re-evaluate every second. This catches SPA URL changes (Netflix
 // browse -> watch) AND Prime opening/closing its player without a URL change.
-// reconcile() is idempotent, so polling it is cheap and safe.
 setInterval(reconcile, 1000);
 window.addEventListener("popstate", reconcile);

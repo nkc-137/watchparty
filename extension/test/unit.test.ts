@@ -11,7 +11,6 @@
 import assert from "assert";
 import {
   clockSync,
-  connSig,
   correctionRate,
   driftToleranceFor,
   isWatchPage,
@@ -43,7 +42,7 @@ import {
   viewFor,
   viewGate,
 } from "../src/party";
-import { StoredConfig, SyncState } from "../src/protocol";
+import { SyncState } from "../src/protocol";
 
 // ---- tiny test harness ------------------------------------------------------
 const cases: { name: string; fn: () => void }[] = [];
@@ -55,14 +54,6 @@ const state = (over: Partial<SyncState> = {}): SyncState => ({
   position: 100,
   playing: true,
   at: T0,
-  ...over,
-});
-const cfg = (over: Partial<StoredConfig> = {}): StoredConfig => ({
-  serverUrl: "https://s.example",
-  roomCode: "movie-night",
-  name: "Sam",
-  secret: "shh",
-  connected: true,
   ...over,
 });
 
@@ -184,39 +175,6 @@ test("planSync handles the late-joiner case: wrong place and wrong state", () =>
   assert.strictEqual(plan.seek, true);
   assert.strictEqual(plan.setPlaying, true);
   assert.strictEqual(plan.position, 601, "seek target includes time in flight");
-});
-
-// ---- connSig ----------------------------------------------------------------
-
-test("connSig ignores display-only settings so the overlay toggle can't drop the socket", () => {
-  assert.strictEqual(
-    connSig(cfg({ showPanel: true })),
-    connSig(cfg({ showPanel: false })),
-    "showPanel must not be connection-relevant"
-  );
-});
-
-test("connSig treats the master switch as connection-relevant", () => {
-  // Flipping it must change the signature, because that is what triggers the
-  // teardown that closes the socket and removes the overlay. If it were
-  // excluded, switching off would leave a live connection behind.
-  assert.notStrictEqual(connSig(cfg({ enabled: false })), connSig(cfg({ enabled: true })));
-});
-
-test("connSig treats a missing master switch as on", () => {
-  // Installs predating the switch have no `enabled` field; they must not look
-  // like a config change and reconnect on upgrade.
-  assert.strictEqual(connSig(cfg({ enabled: undefined })), connSig(cfg({ enabled: true })));
-});
-
-test("connSig changes when anything connection-relevant changes", () => {
-  const base = connSig(cfg());
-  assert.notStrictEqual(connSig(cfg({ roomCode: "other" })), base);
-  assert.notStrictEqual(connSig(cfg({ serverUrl: "https://other" })), base);
-  assert.notStrictEqual(connSig(cfg({ secret: "different" })), base);
-  assert.notStrictEqual(connSig(cfg({ name: "Alex" })), base);
-  assert.notStrictEqual(connSig(cfg({ connected: false })), base);
-  assert.strictEqual(connSig(null), "", "no config is its own signature");
 });
 
 // ---- isWatchPage ------------------------------------------------------------

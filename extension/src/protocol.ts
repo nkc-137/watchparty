@@ -139,12 +139,17 @@ export interface ServerToClientEvents {
   holdRelease: (release: HoldRelease) => void;
 }
 
+/**
+ * The popup's saved preferences (chrome.storage.local). The room fields are
+ * the form's last values; joining snapshots them into the party binding (see
+ * party.ts), which is what a tab actually connects with. Older installs may
+ * still carry a `connected` flag here; it is ignored.
+ */
 export interface StoredConfig {
   serverUrl: string;
   roomCode: string;
   name: string;
   secret: string;
-  connected: boolean;
   /**
    * Master switch. When false the extension goes fully dormant: no socket, no
    * events in or out, no overlay. The room config is kept, so switching back on
