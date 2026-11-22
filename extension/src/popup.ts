@@ -3,12 +3,19 @@
  * (chrome.storage.local). Joining binds the party to the tab the popup was
  * opened over, through the background worker; only that tab connects.
  */
-import { callBackground } from "./messages";
-import { ConnParams } from "./party";
+import { callBackground, callTab } from "./messages";
+import { ConnParams, PartyRecord } from "./party";
 import { StoredConfig } from "./protocol";
+import { isSupportedSite } from "./sync";
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
 const msg = () => document.getElementById("msg") as HTMLDivElement;
+const partyRow = document.getElementById("party") as HTMLDivElement;
+const partyText = document.getElementById("partyText") as HTMLSpanElement;
+const gotoButton = document.getElementById("goto") as HTMLButtonElement;
+
+// The tab holding the party, as last shown (for "Go to tab").
+let partyTabId: number | undefined;
 
 function fields(): ConnParams {
   return {
@@ -36,22 +43,62 @@ async function restore() {
   }
   const on = cfg?.enabled !== false;
   applyEnabledUI(on);
-  if (!on) {
-    msg().textContent = "Extension is off.";
-    return;
-  }
-  try {
-    const { party } = await callBackground("wp:status", {});
-    if (party) msg().textContent = `In room "${party.roomCode}".`;
-  } catch {
-    // No status is fine; the form still works.
-  }
+  if (!on) msg().textContent = "Extension is off.";
+  await showParty();
 }
 
 /** The tab the popup was opened over. */
-async function activeTabId(): Promise<number | undefined> {
+async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab?.id;
+  return tab;
+}
+
+/** Fetch the binding, or null if the worker can't be reached. */
+async function fetchParty(): Promise<PartyRecord | null> {
+  try {
+    return await callBackground("wp:status", {});
+  } catch {
+    return null;
+  }
+}
+
+/** Show where the party is relative to this tab, with a way to get there. */
+async function showParty(): Promise<void> {
+  const [rec, tab] = await Promise.all([fetchParty(), activeTab()]);
+  const party = rec?.party ?? null;
+  partyTabId = party?.tabId;
+  partyRow.hidden = !party;
+  if (!party) return;
+  const here = party.tabId === tab?.id;
+  partyText.textContent = here
+    ? `In "${party.roomCode}" in this tab.`
+    : `In "${party.roomCode}" in another tab.`;
+  gotoButton.hidden = here;
+}
+
+type TabCheck = { ok: true; onWatchPage: boolean } | { ok: false; problem: string };
+
+/**
+ * Whether Watch Party is running in a tab, asked of its content script. A tab
+ * opened before the extension was installed or updated has no live script, so
+ * binding it would silently connect nothing; say what to do instead.
+ */
+async function checkTab(tab: chrome.tabs.Tab & { id: number }): Promise<TabCheck> {
+  try {
+    const reply = await callTab(tab.id, "wp:probe", {});
+    return { ok: true, onWatchPage: !!reply?.onWatchPage };
+  } catch {
+    // tab.url is only visible on sites we have host access to — which are
+    // exactly the supported ones, so a missing url means "not supported".
+    const url = tab.url ? new URL(tab.url) : null;
+    const supported = !!url && isSupportedSite(url.hostname, url.pathname);
+    return {
+      ok: false,
+      problem: supported
+        ? "Reload this tab, then Join."
+        : "Open Netflix, Prime Video, YouTube, Tubi, Pluto TV or Einthusan in this tab, then Join.",
+    };
+  }
 }
 
 /** Remember the form for next time. Keeps the toggles; drops legacy fields. */
@@ -96,17 +143,39 @@ document.getElementById("join")!.addEventListener("click", async () => {
     msg().textContent = "Server URL and room code are required.";
     return;
   }
-  const tabId = await activeTabId();
-  if (tabId === undefined) {
+  const tab = await activeTab();
+  if (tab?.id === undefined) {
     msg().textContent = "Couldn't find this tab.";
     return;
   }
+  const tabId = tab.id;
+  const check = await checkTab({ ...tab, id: tabId });
+  if (!check.ok) {
+    msg().textContent = check.problem;
+    return;
+  }
   try {
+    const before = await fetchParty();
     await savePrefs(conn);
     await callBackground("wp:join", { tabId, conn });
-    msg().textContent = `Joining "${conn.roomCode}" in this tab…`;
+    const moved = before?.party && before.party.tabId !== tabId;
+    const done = moved ? `Moved the party to this tab ("${conn.roomCode}").` : `Joining "${conn.roomCode}" in this tab…`;
+    msg().textContent = check.onWatchPage ? done : `${done} Start a title to sync.`;
   } catch {
     msg().textContent = "Couldn't join — try again.";
+  }
+  await showParty();
+});
+
+// Jump to the party tab, in whichever window it is.
+gotoButton.addEventListener("click", async () => {
+  if (partyTabId === undefined) return;
+  try {
+    const tab = await chrome.tabs.update(partyTabId, { active: true });
+    if (tab) await chrome.windows.update(tab.windowId, { focused: true });
+    window.close();
+  } catch {
+    await showParty(); // it closed meanwhile
   }
 });
 
@@ -163,6 +232,7 @@ document.getElementById("leave")!.addEventListener("click", async () => {
   } catch {
     msg().textContent = "Couldn't leave — try again.";
   }
+  await showParty();
 });
 
 void restore();

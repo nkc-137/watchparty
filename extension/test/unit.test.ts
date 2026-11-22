@@ -13,6 +13,7 @@ import {
   clockSync,
   correctionRate,
   driftToleranceFor,
+  isSupportedSite,
   isWatchPage,
   planSync,
   projected,
@@ -336,6 +337,17 @@ test("seqGate: a follower ignores beats older than the latest event, and all bea
   g.acked(3);
   assert.strictEqual(g.accepts({ seq: 2 }), false);
   assert.strictEqual(g.accepts({ seq: 3 }), true);
+});
+
+test("isSupportedSite matches the manifest's sites, and only them", () => {
+  assert.strictEqual(isSupportedSite("www.youtube.com", "/watch"), true);
+  assert.strictEqual(isSupportedSite("netflix.com", "/browse"), true);
+  assert.strictEqual(isSupportedSite("www.amazon.com", "/gp/video/detail/X"), true);
+  assert.strictEqual(isSupportedSite("www.amazon.com", "/dp/B000"), false, "only Amazon's video pages");
+  assert.strictEqual(isSupportedSite("einthusan.tv", "/movie/watch/x"), true);
+  assert.strictEqual(isSupportedSite("notyoutube.com", "/watch"), false);
+  assert.strictEqual(isSupportedSite("youtube.com.evil.example", "/watch"), false);
+  assert.strictEqual(isSupportedSite("www.google.com", "/"), false);
 });
 
 // ---- party binding ----------------------------------------------------------

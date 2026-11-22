@@ -53,6 +53,18 @@
       #controls { transition: opacity 0.15s; }
       body.off #controls { opacity: 0.4; pointer-events: none; }
       .hint { font-size: 10px; opacity: 0.5; margin-top: 2px; }
+      /* Where the party is: this tab, or another one (with a way to get there). */
+      .party {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        margin: 0 0 10px; padding: 7px 9px; border-radius: 5px;
+        background: #1f1f1f; border: 1px solid #2a2a2a; font-size: 12px;
+      }
+      .party[hidden] { display: none; }
+      #goto {
+        flex: none; padding: 3px 8px; font-size: 11px;
+        background: #333; color: #fff;
+      }
+      #goto[hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -64,6 +76,10 @@
         <span class="slider"></span>
       </span>
     </label>
+    <div id="party" class="party" hidden>
+      <span id="partyText"></span>
+      <button id="goto" hidden>Go to tab</button>
+    </div>
     <div id="controls">
     <label>Server URL</label>
     <input id="serverUrl" placeholder="https://party.example.com" />
@@ -90,7 +106,7 @@
     </label>
     </div>
     <div id="msg"></div>
-    <div class="hint">Open a title on Netflix, Prime Video, YouTube, Tubi, Pluto TV, or Einthusan, then Join. Everyone must be on the same title.</div>
+    <div class="hint">Open a title on Netflix, Prime Video, YouTube, Tubi, Pluto TV, or Einthusan, then Join from that tab. Only that tab syncs; your other tabs stay independent. Everyone must be on the same title.</div>
     <script src="popup.js"></script>
   </body>
 </html>

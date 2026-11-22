@@ -89,6 +89,18 @@ export function isWatchPage(
   return false;
 }
 
+/**
+ * Whether Watch Party runs on this site at all. Mirrors the manifest's match
+ * patterns, so the popup can tell "unsupported site" from "supported, but the
+ * page needs a reload" (e.g. it was open before the extension was installed).
+ */
+export function isSupportedSite(hostname: string, pathname: string): boolean {
+  const h = hostname.toLowerCase();
+  const on = (domain: string) => h === domain || h.endsWith("." + domain);
+  if (on("amazon.com")) return pathname.startsWith("/gp/video/");
+  return ["netflix.com", "primevideo.com", "youtube.com", "tubitv.com", "pluto.tv", "einthusan.tv", "einthusan.com", "einthusan.ca"].some(on);
+}
+
 /** Whether two content descriptions are the same, nulls included. */
 export function sameContent(
   a: ContentInfo | null,
