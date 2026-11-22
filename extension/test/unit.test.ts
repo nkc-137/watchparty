@@ -28,6 +28,20 @@ import { PRIME_ID_PATTERNS } from "../src/players/prime";
 import { TUBI_ID_PATTERNS } from "../src/players/tubi";
 import { PLUTO_ID_PATTERNS } from "../src/players/pluto";
 import { EINTHUSAN_ID_PATTERNS } from "../src/players/einthusan";
+import {
+  ConnParams,
+  NO_PARTY,
+  PartyRecord,
+  affectedTabs,
+  connKey,
+  desiredConnection,
+  join,
+  leave,
+  tabClosed,
+  tabReplaced,
+  viewFor,
+  viewGate,
+} from "../src/party";
 import { StoredConfig, SyncState } from "../src/protocol";
 
 // ---- tiny test harness ------------------------------------------------------
@@ -363,6 +377,114 @@ test("seqGate: a follower ignores beats older than the latest event, and all bea
   g.acked(3);
   assert.strictEqual(g.accepts({ seq: 2 }), false);
   assert.strictEqual(g.accepts({ seq: 3 }), true);
+});
+
+// ---- party binding ----------------------------------------------------------
+
+const room = (over: Partial<ConnParams> = {}): ConnParams => ({
+  serverUrl: "https://s.example",
+  roomCode: "movie-night",
+  name: "Sam",
+  secret: "shh",
+  ...over,
+});
+const joined = (tabId = 7, rev = 0): PartyRecord => join({ party: null, rev }, tabId, room());
+
+test("join binds the party to one tab and bumps the revision", () => {
+  const rec = join(NO_PARTY, 7, room());
+  assert.strictEqual(rec.party?.tabId, 7);
+  assert.strictEqual(rec.party?.roomCode, "movie-night");
+  assert.strictEqual(rec.rev, NO_PARTY.rev + 1);
+});
+
+test("joining from another tab moves the party there in one step", () => {
+  const moved = join(joined(7), 9, room({ roomCode: "other" }));
+  assert.strictEqual(moved.party?.tabId, 9);
+  assert.strictEqual(moved.party?.roomCode, "other", "the new room travels with the new tab");
+  assert.strictEqual(viewFor(moved, 7).conn, null, "the old tab is let go");
+});
+
+test("join keeps only the connection fields from what it is given", () => {
+  const sneaky = { ...room(), tabId: 99, extra: true } as unknown as ConnParams;
+  const rec = join(NO_PARTY, 7, sneaky);
+  assert.strictEqual(rec.party?.tabId, 7, "the caller's tab id wins");
+  assert.ok(!("extra" in (rec.party as object)));
+});
+
+test("leave clears the party, and is a no-op when there is none", () => {
+  const left = leave(joined());
+  assert.strictEqual(left.party, null);
+  assert.strictEqual(left.rev, joined().rev + 1);
+  assert.strictEqual(leave(NO_PARTY), NO_PARTY, "unchanged record means nothing to write");
+});
+
+test("closing the party tab ends the party; closing another tab does not", () => {
+  const rec = joined(7);
+  assert.strictEqual(tabClosed(rec, 8), rec);
+  assert.strictEqual(tabClosed(rec, 7).party, null);
+});
+
+test("a late close of the old tab can't end a party that has moved on", () => {
+  // Popup moves the party 7 -> 9, then tab 7's close is processed.
+  const moved = join(joined(7), 9, room());
+  assert.strictEqual(tabClosed(moved, 7), moved);
+});
+
+test("the party follows a tab whose id Chrome replaced", () => {
+  const rec = tabReplaced(joined(7), 70, 7);
+  assert.strictEqual(rec.party?.tabId, 70);
+  assert.strictEqual(rec.party?.roomCode, "movie-night");
+  const other = joined(7);
+  assert.strictEqual(tabReplaced(other, 80, 8), other, "unrelated replacements are ignored");
+});
+
+test("only the party tab is told the room settings", () => {
+  const rec = joined(7);
+  assert.deepStrictEqual(viewFor(rec, 7).conn, room());
+  assert.strictEqual(viewFor(rec, 8).conn, null, "other tabs never see the secret");
+  assert.ok(!("tabId" in (viewFor(rec, 7).conn as object)));
+  assert.strictEqual(viewFor(NO_PARTY, 7).conn, null);
+});
+
+test("affectedTabs names both ends of a move, once each", () => {
+  assert.deepStrictEqual(affectedTabs(joined(7), join(joined(7), 9, room())), [7, 9]);
+  assert.deepStrictEqual(affectedTabs(joined(7), join(joined(7), 7, room({ name: "A" }))), [7]);
+  assert.deepStrictEqual(affectedTabs(NO_PARTY, NO_PARTY), []);
+});
+
+test("viewGate drops a stale snapshot that arrives after a newer one", () => {
+  // A tab's startup request was answered before a push, but delivered after it.
+  const g = viewGate();
+  assert.strictEqual(g.accepts({ conn: null, rev: 5 }), true);
+  assert.strictEqual(g.accepts({ conn: room(), rev: 4 }), false);
+  assert.strictEqual(g.accepts({ conn: null, rev: 5 }), true, "the same snapshot twice is fine");
+  assert.strictEqual(g.accepts({ conn: room(), rev: 6 }), true);
+});
+
+test("desiredConnection needs the switch on, a party, a watch page and a usable room", () => {
+  const ok = { enabled: true, conn: room(), onWatchPage: true };
+  assert.deepStrictEqual(desiredConnection(ok), room());
+  assert.strictEqual(desiredConnection({ ...ok, enabled: false }), null);
+  assert.strictEqual(desiredConnection({ ...ok, conn: null }), null);
+  assert.strictEqual(desiredConnection({ ...ok, onWatchPage: false }), null);
+  assert.strictEqual(desiredConnection({ ...ok, conn: room({ serverUrl: "" }) }), null);
+  assert.strictEqual(desiredConnection({ ...ok, conn: room({ roomCode: "" }) }), null);
+});
+
+test("connKey changes with anything connection-relevant, and only that", () => {
+  const base = connKey(room());
+  assert.strictEqual(connKey({ ...room() }), base);
+  for (const over of [{ roomCode: "x" }, { serverUrl: "https://x" }, { name: "Alex" }, { secret: "y" }]) {
+    assert.notStrictEqual(connKey(room(over)), base, JSON.stringify(over));
+  }
+  assert.strictEqual(connKey(null), "");
+});
+
+test("connKey can't be confused by separators inside a field", () => {
+  assert.notStrictEqual(
+    connKey(room({ roomCode: "a|b", name: "c" })),
+    connKey(room({ roomCode: "a", name: "b|c" }))
+  );
 });
 
 // ---- runner -----------------------------------------------------------------
