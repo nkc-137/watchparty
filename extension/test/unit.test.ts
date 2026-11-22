@@ -35,6 +35,7 @@ import {
   affectedTabs,
   connKey,
   desiredConnection,
+  isConnParams,
   join,
   leave,
   tabClosed,
@@ -485,6 +486,15 @@ test("connKey can't be confused by separators inside a field", () => {
     connKey(room({ roomCode: "a|b", name: "c" })),
     connKey(room({ roomCode: "a", name: "b|c" }))
   );
+});
+
+test("isConnParams accepts room settings and rejects anything else", () => {
+  assert.strictEqual(isConnParams(room()), true);
+  assert.strictEqual(isConnParams(room({ secret: "" })), true, "an empty secret is allowed");
+  assert.strictEqual(isConnParams({ ...room(), name: 5 }), false);
+  assert.strictEqual(isConnParams({ serverUrl: "x", roomCode: "y" }), false);
+  assert.strictEqual(isConnParams(null), false);
+  assert.strictEqual(isConnParams("room"), false);
 });
 
 // ---- runner -----------------------------------------------------------------

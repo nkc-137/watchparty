@@ -125,6 +125,13 @@ export function connKey(conn: ConnParams | null): string {
   return conn ? JSON.stringify([conn.serverUrl, conn.roomCode, conn.name, conn.secret]) : "";
 }
 
+/** Shape check for room settings arriving over messaging. */
+export function isConnParams(v: unknown): v is ConnParams {
+  if (typeof v !== "object" || v === null) return false;
+  const c = v as Record<string, unknown>;
+  return ["serverUrl", "roomCode", "name", "secret"].every((k) => typeof c[k] === "string");
+}
+
 function connOf(c: ConnParams): ConnParams {
   return { serverUrl: c.serverUrl, roomCode: c.roomCode, name: c.name, secret: c.secret };
 }
