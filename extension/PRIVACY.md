@@ -22,6 +22,11 @@ with the sync server that **you** or your watch-party host operates.
 - **Your settings.** Your sync-server URL, room code, display name, shared
   secret, and overlay preference are stored locally in your browser using the
   extension storage API.
+- **Which tab is in the party.** While you are in a room, the extension keeps
+  the browser's internal id for the tab you joined from, so that only that tab
+  syncs. Tab addresses are never stored or sent anywhere; the popup only
+  checks the current tab's address, locally, to tell you when a supported page
+  needs a reload before you can join.
 
 ## What is transmitted, and to where
 
@@ -41,6 +46,8 @@ service.
 
 - Settings are stored locally in your browser and remain until you change or
   remove them, or uninstall the extension.
+- The party tab's id is kept in session-only extension storage and is
+  discarded when you leave the room, close that tab, or close the browser.
 - The sync server relays messages between participants in real time and is
   operated by you or your host. Any retention on that server is governed by
   whoever runs it. The reference server keeps only transient in-memory room

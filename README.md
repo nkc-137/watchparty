@@ -41,6 +41,7 @@ It has two parts:
 - ⏳ **Buffer gate** — nobody starts until everyone has buffered, and if one person stalls mid-film the room parks and resumes together
 - 🎯 **Wrong-title detection** — if someone opens a different episode, the room says so and ignores their play/pause/seek instead of dragging everyone to a meaningless timestamp
 - 📶 **Latency badge** + one-click **⟳ resync** to snap back to the host
+- 🗂️ **One party tab** — the party lives in the tab you joined from; watch something else in another tab and it stays out of the room (and the room stays out of it)
 - 🔌 **Master on/off switch** — one toggle makes the extension fully dormant: no socket, no events, no overlay, with your room config kept for next time
 - 🫥 **Collapsible, translucent overlay** — or hide it entirely and keep syncing
 - 🔗 **One-click invites** — a token bundles the server URL, room, and secret
@@ -82,7 +83,12 @@ Then in Chrome: open `chrome://extensions` → turn on **Developer mode** →
    - **Server URL** — `http://localhost:4000` for a local test
    - **Room code** — any shared word, e.g. `movie-night`
    - **Name**, and the **Secret** (your `JOIN_SECRET`)
-3. Click **Join**. The first person in a room is the **host**; their play/pause/seek drives everyone.
+3. Click **Join** from the tab with the title open. The first person in a room is the **host**; their play/pause/seek drives everyone.
+
+Only the tab you joined from is in the party. Other tabs, even ones on a
+supported site, stay independent. To bring the party to another tab, open the
+popup there and click **Join** again. Closing the party tab ends the party, and
+so does closing the browser.
 
 > ℹ️ Browsers require a secure origin (`https://`/`wss://`) in production.
 > `http://localhost` is fine for testing; for real parties put the server behind
@@ -129,7 +135,7 @@ Each friend does a one-time install, then joins in seconds.
    [publishing](#publishing-to-the-chrome-web-store)), or load the `dist` folder
    unpacked.
 2. Open the **same title** on the same service.
-3. Click the **W** icon → **Paste invite** → type a **Name** → **Join**.
+3. In that tab, click the **W** icon → **Paste invite** → type a **Name** → **Join**.
 
 > 🔁 Re-share a fresh invite whenever the tunnel URL changes (i.e. after a PC or
 > tunnel restart).
@@ -225,7 +231,9 @@ flowchart TB
         end
         inject <-->|postMessage bridge| content
     end
-    popup["popup.ts<br/>join / invite / toggle"] -->|chrome.storage| content
+    popup["popup.ts<br/>join / invite / toggle"] -->|join / leave| bg["background.ts<br/>owns the party tab"]
+    bg -->|"this tab's room<br/>(party tab only)"| content
+    popup -->|prefs · chrome.storage| content
     content <-->|Socket.IO| server[("Sync server")]
 ```
 
@@ -265,6 +273,11 @@ watchparty/
 │   ├── src/
 │   │   ├── inject.ts       # MAIN-world player bridge (generic)
 │   │   ├── content.ts      # ISOLATED-world socket + reconcile logic
+│   │   ├── background.ts   # service worker: owns which tab holds the party
+│   │   ├── party.ts        # pure party-binding model (tab ↔ room)
+│   │   ├── partyStore.ts   # background: persists + broadcasts the binding
+│   │   ├── partyClient.ts  # content: follows this tab's binding
+│   │   ├── messages.ts     # typed runtime messages between contexts
 │   │   ├── chat.ts         # collapsible overlay / dashboard
 │   │   ├── popup.ts        # config, invites, show/hide toggle
 │   │   ├── sync.ts         # pure sync math + page/config predicates
@@ -306,8 +319,9 @@ npm run test:client   # start the server first (npm start), then run this
 ### Extension unit tests
 
 The decisions underneath the browser-side code — where the host really is,
-whether to correct drift, what page we're on, which title is playing — are pure
-functions in `src/sync.ts` and `src/players/`, so they run in plain Node with no
+whether to correct drift, what page we're on, which title is playing, which tab
+holds the party — are pure functions in `src/sync.ts`, `src/party.ts` and
+`src/players/`, so they run in plain Node with no
 browser, framework or DOM shim (esbuild bundles them; see `test/run.mjs`):
 
 ```bash
