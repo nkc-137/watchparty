@@ -47,6 +47,13 @@ export interface PlayerAdapter {
    */
   setRate?(rate: number): void;
 
+  /**
+   * True once after getTime() jumped for a reason that isn't playback, so the
+   * jump is not reported as the viewer seeking. Prime uses it when it
+   * re-bases after an ad break. Optional; without it every jump is a seek.
+   */
+  consumeTimelineJump?(): boolean;
+
   // --- Optional robustness tuning (defaults keep Netflix's original behavior) ---
 
   /**

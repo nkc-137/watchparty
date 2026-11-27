@@ -25,6 +25,7 @@ import { cleanTitle, idFromUrl } from "../src/players/identity";
 import { NETFLIX_ID_PATTERNS } from "../src/players/netflix";
 import { YOUTUBE_ID_PATTERNS } from "../src/players/youtube";
 import { PRIME_ID_PATTERNS } from "../src/players/prime";
+import { parsePrimeElapsed, primeClock } from "../src/players/primeClock";
 import { TUBI_ID_PATTERNS } from "../src/players/tubi";
 import { PLUTO_ID_PATTERNS } from "../src/players/pluto";
 import { EINTHUSAN_ID_PATTERNS } from "../src/players/einthusan";
@@ -465,6 +466,91 @@ test("isConnParams accepts room settings and rejects anything else", () => {
   assert.strictEqual(isConnParams({ serverUrl: "x", roomCode: "y" }), false);
   assert.strictEqual(isConnParams(null), false);
   assert.strictEqual(isConnParams("room"), false);
+});
+
+// ---- primeClock -------------------------------------------------------------
+
+/**
+ * Feed a clock 250ms samples of a viewer on Prime. `stream` is the <video>'s
+ * currentTime and `content` is what Prime's time display would show (floored,
+ * the way it is shown on screen). `adSec` seconds of ad play first, with the
+ * display frozen. Returns the final stream and content times.
+ */
+function playPrime(
+  c: ReturnType<typeof primeClock>,
+  o: { stream: number; content: number; sec: number; adSec?: number; t: { now: number } }
+) {
+  let { stream, content } = o;
+  const step = 0.25;
+  for (let i = 0; i < (o.adSec ?? 0) / step; i++) {
+    stream += step;
+    o.t.now += step * 1000;
+    c.observe(stream, Math.floor(content), o.t.now);
+  }
+  for (let i = 0; i < o.sec / step; i++) {
+    stream += step;
+    content += step;
+    o.t.now += step * 1000;
+    c.observe(stream, Math.floor(content), o.t.now);
+  }
+  return { stream, content };
+}
+
+test("parsePrimeElapsed reads the elapsed half of Prime's time display", () => {
+  assert.strictEqual(parsePrimeElapsed("12:34 / 1:45:23"), 754);
+  assert.strictEqual(parsePrimeElapsed("1:02:03 / 1:45:00"), 3723);
+  assert.strictEqual(parsePrimeElapsed("0:05"), 5);
+  assert.strictEqual(parsePrimeElapsed("-1:32:49"), null);
+  assert.strictEqual(parsePrimeElapsed(""), null);
+  assert.strictEqual(parsePrimeElapsed(null), null);
+});
+
+test("primeClock: viewers with and without ads report the same scene identically", () => {
+  // Same scene at 10:00 of the title; one stream has 2 minutes of ads spliced in.
+  const t = { now: T0 };
+  const withAds = primeClock();
+  const adFree = primeClock();
+  const a = playPrime(withAds, { stream: 720, content: 600, sec: 3, t });
+  const b = playPrime(adFree, { stream: 600, content: 600, sec: 3, t });
+  assert.ok(Math.abs(withAds.content(a.stream) - a.content) < 0.3);
+  assert.ok(Math.abs(adFree.content(b.stream) - b.content) < 0.3);
+  // And a seek to a content time lands both on the same scene.
+  assert.ok(Math.abs(withAds.stream(300) - 420) < 0.3);
+  assert.ok(Math.abs(adFree.stream(300) - 300) < 0.3);
+});
+
+test("primeClock keeps advancing through an ad, then re-bases without calling it a seek", () => {
+  const t = { now: T0 };
+  const c = primeClock();
+  let p = playPrime(c, { stream: 600, content: 600, sec: 2, t });
+  // A 30s ad: the stream runs, the display stands still.
+  const before = c.content(p.stream);
+  p = playPrime(c, { ...p, sec: 0, adSec: 30, t });
+  assert.ok(c.content(p.stream) > before + 29, "position should not freeze mid-ad");
+  assert.strictEqual(c.takeAdJump(), false, "not re-based while the ad is still running");
+  p = playPrime(c, { ...p, sec: 3, t });
+  assert.ok(Math.abs(c.offset()! - 30) < 0.3);
+  assert.ok(Math.abs(c.content(p.stream) - p.content) < 0.3);
+  assert.strictEqual(c.takeAdJump(), true);
+  assert.strictEqual(c.takeAdJump(), false, "reported once");
+});
+
+test("primeClock: seeking across an ad break re-bases but is still the viewer's seek", () => {
+  const t = { now: T0 };
+  const c = primeClock();
+  let p = playPrime(c, { stream: 720, content: 600, sec: 2, t });
+  // Rewind to 1:00, before the 2-minute ad break: the stream has no ads there.
+  p = playPrime(c, { stream: 60, content: 60, sec: 3, t });
+  assert.ok(Math.abs(c.offset()!) < 0.3);
+  assert.ok(Math.abs(c.content(p.stream) - p.content) < 0.3);
+  assert.strictEqual(c.takeAdJump(), false);
+});
+
+test("primeClock falls back to the stream clock until the display has been read", () => {
+  const c = primeClock();
+  c.observe(500, null, T0);
+  assert.strictEqual(c.content(500), 500);
+  assert.strictEqual(c.stream(500), 500);
 });
 
 // ---- runner -----------------------------------------------------------------

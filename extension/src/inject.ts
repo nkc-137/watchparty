@@ -131,7 +131,9 @@ function sample() {
   // background tabs) and allowing for a rate nudge of up to ~10%.
   const drift = Math.abs(time - lastTime);
   const expected = paused ? 0 : ((now - lastSampleAt) / 1000) * 1.15 + 0.3;
-  if (!suppressed && lastPaused !== null && drift > 1.5 + expected) {
+  // The adapter re-based its clock (Prime, after an ad): not the viewer seeking.
+  const rebased = adapter.consumeTimelineJump?.() ?? false;
+  if (!suppressed && !rebased && lastPaused !== null && drift > 1.5 + expected) {
     post({ ns: NS, dir: "fromPage", kind: "playback", action: "seek", position: time, content, sampledAt: now });
   }
 
